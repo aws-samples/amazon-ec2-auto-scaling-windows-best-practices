@@ -1,0 +1,1038 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+  InstanceType:
+    Description: Amazon EC2 instance type for the AutoScaling group.
+    Type: String
+    AllowedValues:
+      - t3.small
+      - t3.medium
+      - t3.large
+      - m5.large
+      - m5.xlarge
+    Default: t3.medium
+  VPC:
+    Type: 'AWS::EC2::VPC::Id'
+    Description: A VPC for the Auto Scaling group, RDS, MAD and other resources
+  PrivateSubnets:
+    Type: 'List<AWS::EC2::Subnet::Id>'
+    Description: A list of subnets (at least two) for the Auto Scaling group, RDS, MAD and other resources
+  PublicSubnets:
+    Type: 'List<AWS::EC2::Subnet::Id>'
+    Description: A list of subnets (at least two) for the internet-facing load balancer
+  MicrosoftADDomainName:
+    Description: Fully qualified domain name (FQDN) of the AWS Managed Microsoft AD domain e.g. corp.example.com
+    Type: String
+    MinLength: 2
+    MaxLength: 25
+    AllowedPattern: ^([a-zA-Z0-9]+[\\.-])+([a-zA-Z0-9])+$
+    Default: "bobsusedbookstore.cloud"
+  KeyPair:
+    Type: String
+    Description: "KeyPair to be use with Autoscaling Launch template."
+Rules:
+  PrivateSubnetsInVPC:
+    Assertions:
+      - Assert:
+          'Fn::EachMemberEquals':
+            - 'Fn::ValueOf':
+                - PrivateSubnets
+                - VpcId
+            - Ref: VPC
+        AssertDescription: All private subnets must in the VPC
+  PublicSubnetsInVPC:
+    Assertions:
+      - Assert:
+          'Fn::EachMemberEquals':
+            - 'Fn::ValueOf':
+                - PublicSubnets
+                - VpcId
+            - Ref: VPC
+        AssertDescription: All public subnets must in the VPC
+Resources:
+  SSMInstanceProfileRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+        - PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+              - secretsmanager:GetSecretValue
+              Resource:
+                - !Ref BobsUsedBooksSqlDbSecret
+                - !Ref BobsUsedBooksMadAdminSecret
+          PolicyName: GetSecretManagerValue
+        - PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Effect: Allow
+              Action:
+              - ssm:GetParametersByPath
+              Resource:
+                Fn::Sub: arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*
+          PolicyName: GetParametersByPath
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/EC2InstanceProfileForImageBuilder
+        - arn:aws:iam::aws:policy/AmazonSSMDirectoryServiceAccess
+      Tags:
+        - Key: CloudFormationStackId
+          Value: !Ref AWS::StackId
+        - Key: CloudFormationStackName
+          Value: !Ref AWS::StackName
+  SSMInstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Roles:
+        - !Ref SSMInstanceProfileRole
+  BobsUsedBooksLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: resolve:ssm:/aws/service/ami-windows-latest/Windows_Server-2022-English-Full-Base
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Arn: !GetAtt
+            - SSMInstanceProfile
+            - Arn
+        KeyName: !Ref KeyPair
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            SubnetId: !Select [0, !Ref PrivateSubnets]
+            Groups:
+              - !Ref ASGSecurityGroup
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+            - Key: Name
+              Value: "BobsUsedBooksInstance"
+  BobsUsedBooksFastLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        InstanceType: !Ref InstanceType
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            SubnetId: !Select [0, !Ref PrivateSubnets]
+            Groups:
+              - !Ref ASGSecurityGroup
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+            - Key: Name
+              Value: "BobsUsedBooksFastLaunch"
+      TagSpecifications:
+        - ResourceType: launch-template
+          Tags:
+          - Key: CreatedBy
+            Value: EC2 Image Builder
+  BobsUsedBooksWindowsASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref BobsUsedBooksLaunchTemplate
+        Version: !GetAtt BobsUsedBooksLaunchTemplate.LatestVersionNumber
+      MaxSize: '1'
+      MinSize: '0'
+      DesiredCapacity: '0'
+      VPCZoneIdentifier: !Ref PrivateSubnets
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      TargetGroupARNs:
+        - !Ref TargetGroup
+      LifecycleHookSpecificationList:
+        - LifecycleHookName: LifeCycleHookScaleIn
+          LifecycleTransition: autoscaling:EC2_INSTANCE_TERMINATING
+          DefaultResult: ABANDON
+        - LifecycleHookName: LifeCycleHookScaleOut
+          LifecycleTransition: autoscaling:EC2_INSTANCE_LAUNCHING
+          DefaultResult: ABANDON
+  BobsUsedBooksInfrastructureConfiguration:
+    Type: 'AWS::ImageBuilder::InfrastructureConfiguration'
+    Properties:
+      Name: !Sub BobsUsedBooksInfrastructureConfiguration-${AWS::StackName}
+      InstanceProfileName: !Ref SSMInstanceProfile
+      Description: !Sub 'Infrastructure Configuration for Bobs Book store Windows AutoScaling solution. Generated by the CFN for stack: ${AWS::StackName}'
+      InstanceTypes:
+        - t3.medium
+        - t3.large
+      SecurityGroupIds:
+        - !Ref ASGSecurityGroup
+      SubnetId: !Select [0, !Ref PrivateSubnets]
+      Tags:
+        CloudFormationStackName: !Ref AWS::StackName
+        CloudFormationStackId: !Ref AWS::StackId
+  BobsUsedBooksIBCustomizedComponent:
+    Type: 'AWS::ImageBuilder::Component'
+    Properties:
+      Name: !Sub BobsUsedBooksCustomizedComponent-${AWS::StackName}
+      Platform: 'Windows'
+      Version: '1.0.0'
+      Description: !Sub 'Customized Component for Bobs Book store Windows AutoScaling solution. Generated by the CFN for stack: ${AWS::StackName}'
+      Tags:
+        CloudFormationStackName: !Ref AWS::StackName
+        CloudFormationStackId: !Ref AWS::StackId
+      Data: !Sub
+        - |
+          name: PrepTheImage
+          description: This will install IIS feature, .net components, download and extract the application, update then publish the .net app under IIS
+          schemaVersion: 1.0
+          phases:
+            - name: build
+              steps:
+                - name: WebConfig
+                  action: ExecutePowerShell
+                  inputs:
+                    commands:
+                      - |
+                        Install-WindowsFeature Web-Asp-Net45,Web-Asp-Net
+                        Import-Module webadministration
+
+                        C:\ProgramData\chocolatey\bin\choco install git.install -y -f
+
+                        $Path = New-Item -Path "c:\AutoScalingWindowsBlog\app\" -ItemType Directory -Force
+                        & "C:\Program Files\Git\cmd\git" clone https://github.com/aws-samples/bobs-used-bookstore-sample.git $Path
+
+                        $ProgramFile = "$Path\app\Bookstore.Web\Program.cs"
+                        $ProgramFind = 'builder.ConfigureAuthentication();'
+                        $ProgramReplace = '// builder.ConfigureAuthentication();'
+
+                        (Get-Content $ProgramFile).replace($ProgramFind, $ProgramReplace) | Set-Content $ProgramFile
+
+                        $NewWebContent=@'
+                        <Project Sdk="Microsoft.NET.Sdk.Web">
+
+                            <PropertyGroup>
+                                <TargetFramework>net6.0</TargetFramework>
+                            </PropertyGroup>
+
+                            <ItemGroup>
+                                <PackageReference Include="Amazon.Extensions.Configuration.SystemsManager" Version="2.1.0" />
+                                <PackageReference Include="AWS.Logger.AspNetCore" Version="3.3.0" />
+                                <PackageReference Include="AWSSDK.CloudWatchLogs" Version="3.7.2.87" />
+                                <PackageReference Include="AWSSDK.Core" Version="3.7.106.37" />
+                                <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="6.0.10" />
+                                <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="5.0.7" />
+                                <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="6.0.6" />
+                                <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="6.0.6">
+                                    <PrivateAssets>all</PrivateAssets>
+                                    <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+                                </PackageReference>
+                                <PackageReference Include="Microsoft.VisualStudio.Web.CodeGeneration.Design" Version="6.0.11" />
+                            </ItemGroup>
+
+                            <ItemGroup>
+                              <ProjectReference Include="..\Bookstore.Data\Bookstore.Data.csproj" />
+                              <ProjectReference Include="..\Bookstore.Domain\Bookstore.Domain.csproj" />
+                            </ItemGroup>
+
+                            <ItemGroup>
+                              <Folder Include="Controllers\" />
+                              <Folder Include="wwwroot\css\" />
+                              <Folder Include="wwwroot\lib\" />
+                            </ItemGroup>
+                        </Project>
+                        '@
+
+                        Set-Content -Path $Path\app\Bookstore.Web\Bookstore.Web.csproj -Value $NewWebContent
+
+                        $NewNavBarPartial=@'
+                        @{
+                            var instanceId = Amazon.Util.EC2InstanceMetadata.GetData("/instance-id");
+                            var availabilityZone = Amazon.Util.EC2InstanceMetadata.GetData("/placement/availability-zone");
+                        }
+
+                        <header>
+                            <nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-light bg-white border-bottom box-shadow mb-3">
+                                <div class="container-fluid">
+                                    <a class="navbar-brand" asp-controller="Home" asp-action="Index">Bob's Used Books</a>
+
+                                    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportContent" aria-controls="navbarSupportedContent"
+                                            aria-expanded="false" aria-label="Toggle navigation">
+                                        <span class="navbar-toggler-icon"></span>
+                                    </button>
+
+                                    <div class="navbar-collapse collapse d-sm-inline-flex flex-sm-row-reverse">
+                                        <ul class="navbar-nav flex-grow-1">
+                                            @if (User.Identity.IsAuthenticated)
+                                            {
+                                                <li class="nav-item">
+                                                    <a class="nav-link text-dark" asp-controller="Orders" asp-action="Index">My Orders</a>
+                                                </li>
+                                            }
+                                            <li class="nav-item">
+                                                <a class="nav-link text-dark" asp-controller="Search" asp-action="Index">Search</a>
+                                            </li>
+                                            @if (User.Identity.IsAuthenticated)
+                                            {
+                                                <li class="nav-item">
+                                                    <a class="nav-link text-dark" asp-controller="Resale" asp-action="Index">Resell my Books</a>
+                                                </li>
+                                            }
+                                            <li class="nav-item">
+                                                <a class="nav-link text-dark" asp-controller="Wishlist" asp-action="Index">Wish List</a>
+                                            </li>
+                                            <li class="nav-item">
+                                                <a class="nav-link text-dark" asp-controller="ShoppingCart" asp-action="Index">Cart</a>
+                                            </li>
+                                        </ul>
+                                        <ul class="navbar-nav flex-grow-1">
+                                            <li class="nav-item">
+                                                [instance id]: <a href="#">@instanceId</a>
+                                            </li>
+                                            <li class="nav-item"> [az]: <a href="#">@availabilityZone</a> </li>
+                                        </ul>
+                                    </div>
+
+                                    <partial name="_LoginPartial" />
+                                </div>
+                            </nav>
+                        </header>
+                        '@
+
+                        Set-Content -Path $Path\app\Bookstore.Web\Views\Shared\_NavBarPartial.cshtml -Value $NewNavBarPartial
+
+                        $ConfigurationSetupFile = "$Path\app\Bookstore.Web\Startup\ConfigurationSetup.cs"
+                        $ConfigurationSetupFind = 'builder.Configuration.AddSystemsManager("/BobsBookstore/");'
+                        $ConfigurationSetupReplace = 'builder.Configuration.AddSystemsManager("/");'
+
+                        (Get-Content $ConfigurationSetupFile).replace($ConfigurationSetupFind, $ConfigurationSetupReplace) | Set-Content $ConfigurationSetupFile
+
+                        $ServicesSetupFile = "$Path\app\Bookstore.Web\Startup\ServicesSetup.cs"
+                        $ServicesSetupFind = 'const string DbSecretsParameterName = "dbsecretsname";'
+                        $ServicesSetupReplace = "const string DbSecretsParameterName = `"${ BobsUsedBooksDbPS }`";"
+
+                        (Get-Content $ServicesSetupFile).replace($ServicesSetupFind, $ServicesSetupReplace) | Set-Content $ServicesSetupFile
+
+                        dotnet publish $Path -o c:\inetpub\wwwroot
+
+        - BobsUsedBooksDbPS: !Ref BobsUsedBooksDbSecret
+  BobsUsedBooksImageRecipe:
+    Type: AWS::ImageBuilder::ImageRecipe
+    Properties:
+      Name: !Sub BobsUsedBooksImageRecipe-${AWS::StackName}
+      Version: '1.0.0'
+      ParentImage: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:image/windows-server-2022-english-full-base-x86/x.x.x'
+      Description: !Sub 'Image Recipe for Bobs Book store Windows AutoScaling solution. Generated by the CFN for stack: ${AWS::StackName}'
+      Components:
+        - ComponentArn: !Sub "arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/update-windows/x.x.x"
+        - ComponentArn: !Sub "arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/chocolatey/x.x.x"
+        - ComponentArn: !Sub "arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/windows-server-iis/x.x.x"
+        - ComponentArn: !Sub "arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/dotnet-hosting-bundle-windows/x.x.x"
+        - ComponentArn: !Sub "arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/dotnet-runtime-windows/x.x.x"
+        - ComponentArn: !Sub "arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/dotnet-sdk-windows/x.x.x"
+        - ComponentArn: !Sub "arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/aws-cli-version-2-windows/x.x.x"
+        - ComponentArn: !Ref BobsUsedBooksIBCustomizedComponent
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            DeleteOnTermination: true
+            VolumeType: "gp3"
+            VolumeSize: 100
+      Tags:
+        CloudFormationStackName: !Ref AWS::StackName
+        CloudFormationStackId: !Ref AWS::StackId
+  BobsUsedBooksDistributionConfiguration:
+    Type: 'AWS::ImageBuilder::DistributionConfiguration'
+    Properties:
+      Name: !Sub BobsUsedBooksDistributionConfiguration-${AWS::StackName}
+      Description: !Sub 'Image Builder Distribution for Bobs Book store Windows AutoScaling solution. Generated by the CFN for stack: ${AWS::StackName}. Distribute to ASG: ${BobsUsedBooksWindowsASG}'
+      Distributions:
+        - Region: !Ref AWS::Region
+          AmiDistributionConfiguration:
+            Name: 'BobsUsedBooksDistributionConfiguration {{ imagebuilder:buildDate }}'
+            Description: 'Update the AMI for Web/APP'
+            AmiTags:
+              AmiTagKey: 'ami-tag-key'
+              Date: '{{ imagebuilder:buildDate }}'
+              Application: !Ref AWS::StackName
+          FastLaunchConfigurations:
+            - AccountId: !Ref AWS::AccountId
+              Enabled: true
+              LaunchTemplate:
+                LaunchTemplateId: !Ref BobsUsedBooksFastLaunchTemplate
+              MaxParallelLaunches: 6
+              SnapshotConfiguration:
+                  TargetResourceCount: 6
+          LaunchTemplateConfigurations:
+          - LaunchTemplateId: !Ref BobsUsedBooksLaunchTemplate
+            SetDefaultVersion: true
+      Tags:
+        CloudFormationStackName: !Ref AWS::StackName
+        CloudFormationStackId: !Ref AWS::StackId
+  BobsUsedBooksImagePipeline:
+    Type: 'AWS::ImageBuilder::ImagePipeline'
+    Properties:
+      Name: !Sub BobsUsedBooksImagePipeline-${AWS::StackName}
+      Description: !Sub 'Image Builder Pipeline for Bobs Book store Windows AutoScaling solution. Generated by the CFN for stack: ${AWS::StackName}'
+      ImageRecipeArn: !Ref BobsUsedBooksImageRecipe
+      InfrastructureConfigurationArn: !Ref BobsUsedBooksInfrastructureConfiguration
+      DistributionConfigurationArn: !Ref BobsUsedBooksDistributionConfiguration
+      EnhancedImageMetadataEnabled: false
+      ImageTestsConfiguration:
+        ImageTestsEnabled: false
+        TimeoutMinutes: 90
+      Schedule:
+        ScheduleExpression: 'cron(30 22 ? * tue#2 *)'
+        PipelineExecutionStartCondition: 'EXPRESSION_MATCH_AND_DEPENDENCY_UPDATES_AVAILABLE'
+      Status: 'ENABLED'
+      Tags:
+        CloudFormationStackName: !Ref AWS::StackName
+        CloudFormationStackId: !Ref AWS::StackId
+  DomainJoinDocument:
+    Type: AWS::SSM::Document
+    Properties:
+      DocumentType: Command
+      DocumentFormat: YAML
+      Content:
+        schemaVersion: "2.2"
+        description: !Sub 'Domain Join document for Bobs Book store Windows AutoScaling solution. Generated by the CFN for stack: ${AWS::StackName}'
+        mainSteps:
+          - action: aws:runDocument
+            name: DomainJoin
+            inputs:
+              DocumentType: SSMDocument
+              DocumentPath: AWS-JoinDirectoryServiceDomain
+              documentParameters:
+                directoryId: !Ref BobsUsedBooksMAD
+                directoryName: !Ref MicrosoftADDomainName
+                dnsIpAddresses: !GetAtt
+                  - BobsUsedBooksMAD
+                  - DnsIpAddresses
+  BobsUsedBooksMAD:
+    Type: AWS::DirectoryService::MicrosoftAD
+    Properties:
+      Name: !Ref MicrosoftADDomainName
+      Password: !Sub '{{resolve:secretsmanager:${BobsUsedBooksMadAdminSecret}:SecretString:password}}'
+      VpcSettings:
+        SubnetIds: !Ref PrivateSubnets
+        VpcId:
+          Ref: VPC
+      Edition: Standard
+  BobsUsedBooksSqlDb:
+    Type: 'AWS::RDS::DBInstance'
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      DBInstanceClass: db.t3.small
+      AllocatedStorage: '100'
+      Engine: sqlserver-ex
+      EngineVersion: "15.00.4236.7.v1"
+      MasterUsername: !Sub '{{resolve:secretsmanager:${BobsUsedBooksSqlDbSecret}:SecretString:username::}}'
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${BobsUsedBooksSqlDbSecret}:SecretString:password::}}'
+      EnablePerformanceInsights: false
+      BackupRetentionPeriod: 3
+      Port: "1433"
+      PubliclyAccessible: false
+      DBSubnetGroupName: !Ref BobsUsedBooksSqlDbSubnetGroup
+      StorageEncrypted: false
+      DeletionProtection: false
+      VPCSecurityGroups:
+        - !Ref DBSecurityGroup
+  BobsUsedBooksSqlDbSecret:
+    Type: 'AWS::SecretsManager::Secret'
+    Properties:
+      Description: !Sub 'Password for RDS MSSQL used for Bobs Book store Windows AutoScaling solution. Generated by the CFN for stack: ${AWS::StackName}'
+      GenerateSecretString:
+        ExcludeCharacters: ' %+~`#$&*()|[]{}:;<>?!''/@"\'
+        GenerateStringKey: password
+        PasswordLength: 30
+        SecretStringTemplate: '{"username":"admin"}'
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+  BobsUsedBooksSqlDbSecretAttachment:
+    Type: 'AWS::SecretsManager::SecretTargetAttachment'
+    Properties:
+      SecretId: !Ref BobsUsedBooksSqlDbSecret
+      TargetId: !Ref BobsUsedBooksSqlDb
+      TargetType: 'AWS::RDS::DBInstance'
+  BobsUsedBooksDbSecret:
+    Type: 'AWS::SSM::Parameter'
+    Properties:
+      Type: String
+      Value: !Join
+        - '-'
+        - - !Select
+            - 0
+            - !Split
+              - '-'
+              - !Select
+                - 6
+                - !Split
+                  - ':'
+                  - !Ref BobsUsedBooksSqlDbSecret
+          - !Select
+            - 1
+            - !Split
+              - '-'
+              - !Select
+                - 6
+                - !Split
+                  - ':'
+                  - !Ref BobsUsedBooksSqlDbSecret
+  BobsUsedBooksSqlDbSubnetGroup:
+    Type: 'AWS::RDS::DBSubnetGroup'
+    Properties:
+      DBSubnetGroupDescription: Subnet group for BobsUsedBooksSqlDb database
+      SubnetIds: !Ref PrivateSubnets
+  EventBridgeRuleScaleIn:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: !Sub 'Amazon EventBridge rule that will trigger AWS Systems Manager Automation document when an instance go in Terminate:wait for Bobs Book store Windows AutoScaling solution. Generated by the CFN for stack: ${AWS::StackName}'
+      EventPattern:
+        source:
+        - aws.autoscaling
+        detail-type:
+        - EC2 Instance-terminate Lifecycle Action
+        detail:
+          AutoScalingGroupName:
+          - Ref: BobsUsedBooksWindowsASG
+      Targets:
+      - Arn:
+          Fn::Sub: arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/${AWSSystemsManagerAutomationDocumentScaleIn}:$DEFAULT
+        RoleArn:
+          !GetAtt EventBridgeRuleRole.Arn
+        Id: TargetFunctionV1
+        InputTransformer:
+          InputPathsMap:
+            instanceid: "$.detail.EC2InstanceId"
+          InputTemplate: '{"InstanceId":[<instanceid>]}'
+  EventBridgeRuleScaleOut:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: !Sub 'Amazon EventBridge rule that will trigger AWS Step functions when an instance go in Pending:Wait for Bobs Book store Windows AutoScaling solution. Generated by the CFN for stack: ${AWS::StackName}'
+      EventPattern:
+        source:
+        - aws.autoscaling
+        detail-type:
+        - EC2 Instance-launch Lifecycle Action
+        detail:
+          AutoScalingGroupName:
+          - Ref: BobsUsedBooksWindowsASG
+      Targets:
+      - Arn:
+          Fn::Sub: arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/${AWSSystemsManagerAutomationDocumentScaleOut}:$DEFAULT
+        RoleArn:
+          !GetAtt EventBridgeRuleRole.Arn
+        Id: TargetFunctionV1
+        InputTransformer:
+          InputPathsMap:
+            instanceid: "$.detail.EC2InstanceId"
+          InputTemplate: '{"InstanceId":[<instanceid>]}'
+  EventBridgeRuleRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - events.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+      - PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - ssm:StartAutomationExecution
+            Resource:
+              - Fn::Sub: arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/${AWSSystemsManagerAutomationDocumentScaleOut}:$DEFAULT
+              - Fn::Sub: arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/${AWSSystemsManagerAutomationDocumentScaleIn}:$DEFAULT
+        PolicyName: Start-SSM-Automation-Policy
+      - PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - iam:PassRole
+            Resource:
+              !GetAtt AWSSystemsManagerAutomationRole.Arn
+        PolicyName: Pass-Role-SSM-Automation-Policy
+      Tags:
+        - Key: CloudFormationStackId
+          Value: !Ref AWS::StackId
+        - Key: CloudFormationStackName
+          Value: !Ref AWS::StackName
+  AWSSystemsManagerAutomationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ssm.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+      - PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - ssm:DescribeInstanceInformation
+            - ssm:ListCommands
+            - ssm:ListCommandInvocations
+            Resource: "*"
+          - Effect: Allow
+            Action:
+            - ssm:SendCommand
+            Resource:
+              - Fn::Sub: arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:document/${DomainJoinDocument}
+              - Fn::Sub: arn:${AWS::Partition}:ssm:${AWS::Region}::document/AWS-RunPowerShellScript
+          - Action:
+            - ssm:SendCommand
+            Resource:
+              Fn::Sub: arn:${AWS::Partition}:ec2:*:*:instance/*
+            Effect: Allow
+        PolicyName: SSM-Automation-Policy
+      - PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - autoscaling:CompleteLifecycleAction
+            Resource:
+              Fn::Sub: arn:${AWS::Partition}:autoscaling:${AWS::Region}:${AWS::AccountId}:autoScalingGroup:*:autoScalingGroupName/${BobsUsedBooksWindowsASG}
+        PolicyName: SSM-Automation-Permission-to-CompleteLifecycle-Policy
+      Tags:
+        - Key: CloudFormationStackId
+          Value: !Ref AWS::StackId
+        - Key: CloudFormationStackName
+          Value: !Ref AWS::StackName
+  AWSSystemsManagerAutomationDocumentScaleIn:
+    Type: AWS::SSM::Document
+    Properties:
+      DocumentType: Automation
+      Content:
+        schemaVersion: '0.3'
+        assumeRole: "{{AutomationAssumeRole}}"
+        description: !Sub 'Automation document to disjoin instances from the Active Directory, send a signal to complete the LifeCycleHook to terminate the
+          instance. Generated by the CFN for stack: ${AWS::StackName}'
+        parameters:
+          InstanceId:
+            type: String
+          ASGName:
+            type: String
+            default:
+              Ref: BobsUsedBooksWindowsASG
+            description: The name of the AutoScaling Group.
+          LCHName:
+            type: String
+            default: LifeCycleHookScaleIn
+            description: The name of the Life Cycle Hook.
+          DomainCredentialSecret:
+            type: String
+            default: !Join
+              - '-'
+              - - !Select
+                  - 0
+                  - !Split
+                    - '-'
+                    - !Select
+                      - 6
+                      - !Split
+                        - ':'
+                        - !Ref BobsUsedBooksMadAdminSecret
+                - !Select
+                  - 1
+                  - !Split
+                    - '-'
+                    - !Select
+                      - 6
+                      - !Split
+                        - ':'
+                        - !Ref BobsUsedBooksMadAdminSecret
+            description: The secret manager parameter for MAD credentials
+          AutomationAssumeRole:
+            type: String
+            default:
+              !GetAtt AWSSystemsManagerAutomationRole.Arn
+            description: "(Required) The ARN of the role that allows Automation to
+              perform the actions on your behalf."
+        mainSteps:
+        - name: verifyInstancesOnlineSSM
+          action: aws:waitForAwsResourceProperty
+          timeoutSeconds: 600
+          nextStep: RunCommand
+          onFailure: Continue
+          inputs:
+            Service: ssm
+            Api: DescribeInstanceInformation
+            InstanceInformationFilterList:
+              - key: InstanceIds
+                valueSet:
+                  - '{{ InstanceId }}'
+            PropertySelector: '$.InstanceInformationList[0].PingStatus'
+            DesiredValues:
+              - Online
+        - name: RunCommand
+          action: aws:runCommand
+          nextStep: ContinueLifecycleAction
+          onFailure: step:ContinueLifecycleAction
+          inputs:
+            DocumentName: AWS-RunPowerShellScript
+            InstanceIds:
+            - "{{ InstanceId }}"
+            Parameters:
+              executionTimeout: '600'
+              commands: |-
+                $name = $env:computerName
+                $PartOfDomain = (Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain
+                if($PartOfDomain -eq $true){
+                  $DomainCredentialSecretValue = (Get-SSMParameterValue -Name /aws/reference/secretsmanager/{{ DomainCredentialSecret }} -WithDecryption $True).Parameters[0].Value | ConvertFrom-Json
+                  $username = $DomainCredentialSecretValue.username
+                  $password = $DomainCredentialSecretValue.password | ConvertTo-SecureString -asPlainText -Force
+                  $credential = New-Object System.Management.automation.PSCredential($username,$password)
+                  Write-Output "Removing computer $name from the domain"
+                  Remove-Computer -ComputerName $name -Credential $credential -PassThru -Force
+                  Write-Output "The computer $name removed from the domain. Rebooting..."
+                  exit 3010
+                }
+                else{
+                Write-Output "The computer $name is not in part of a domain"}
+        - name: ContinueLifecycleAction
+          action: aws:executeAwsApi
+          isEnd: true
+          inputs:
+            Service: autoscaling
+            Api: CompleteLifecycleAction
+            AutoScalingGroupName: "{{ ASGName }}"
+            InstanceId: "{{ InstanceId }}"
+            LifecycleActionResult: CONTINUE
+            LifecycleHookName: "{{ LCHName }}"
+  AWSSystemsManagerAutomationDocumentScaleOut:
+    Type: AWS::SSM::Document
+    Properties:
+      DocumentType: Automation
+      Content:
+        schemaVersion: '0.3'
+        assumeRole: "{{AutomationAssumeRole}}"
+        description: !Sub 'Automation document to join instances to the Active Directory, send a signal to the LifeCycleHook to put the instance InService. Generated by the CFN for stack: ${AWS::StackName}'
+        parameters:
+          InstanceId:
+            type: String
+          ASGName:
+            type: String
+            default:
+              Ref: BobsUsedBooksWindowsASG
+            description: The name of the AutoScaling Group.
+          LCHName:
+            type: String
+            default: LifeCycleHookScaleOut
+            description: The name of the Life Cycle Hook.
+          AutomationAssumeRole:
+            type: String
+            default:
+              !GetAtt AWSSystemsManagerAutomationRole.Arn
+            description: "(Required) The ARN of the role that allows Automation to
+              perform the actions on your behalf."
+        mainSteps:
+        - name: verifyInstancesOnlineSSM
+          action: aws:waitForAwsResourceProperty
+          timeoutSeconds: 600
+          nextStep: RunCommand
+          onFailure: Continue
+          inputs:
+            Service: ssm
+            Api: DescribeInstanceInformation
+            InstanceInformationFilterList:
+              - key: InstanceIds
+                valueSet:
+                  - '{{ InstanceId }}'
+            PropertySelector: '$.InstanceInformationList[0].PingStatus'
+            DesiredValues:
+              - Online
+        - name: RunCommand
+          action: aws:runCommand
+          nextStep: ContinueLifecycleAction
+          onFailure: step:AbandonLifecycleAction
+          inputs:
+            DocumentName: !Ref DomainJoinDocument
+            InstanceIds:
+            - "{{ InstanceId }}"
+        - name: ContinueLifecycleAction
+          action: aws:executeAwsApi
+          isEnd: true
+          inputs:
+            Service: autoscaling
+            Api: CompleteLifecycleAction
+            AutoScalingGroupName: "{{ ASGName }}"
+            InstanceId: "{{ InstanceId }}"
+            LifecycleActionResult: CONTINUE
+            LifecycleHookName: "{{ LCHName }}"
+        - name: AbandonLifecycleAction
+          action: aws:executeAwsApi
+          isEnd: true
+          inputs:
+            Service: autoscaling
+            Api: CompleteLifecycleAction
+            AutoScalingGroupName: "{{ ASGName }}"
+            InstanceId: "{{ InstanceId }}"
+            LifecycleActionResult:  ABANDON
+            LifecycleHookName: "{{ LCHName }}"
+  HTTPListener:
+      Type: "AWS::ElasticLoadBalancingV2::Listener"
+      Properties:
+          LoadBalancerArn: !Ref LoadBalancer
+          Port: 80
+          Protocol: "HTTP"
+          DefaultActions:
+            -
+              Order: 1
+              TargetGroupArn: !Ref TargetGroup
+              Type: "forward"
+  TargetGroup:
+      Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
+      Properties:
+        TargetGroupAttributes:
+          - Key: deregistration_delay.timeout_seconds
+            Value: '3'
+        Port: 80
+        Protocol: "HTTP"
+        TargetType: "instance"
+        VpcId: !Ref VPC
+        Tags:
+            - Key: CloudFormationStackId
+              Value: !Ref AWS::StackId
+            - Key: CloudFormationStackName
+              Value: !Ref AWS::StackName
+  LoadBalancer:
+      Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+      Properties:
+        Subnets: !Ref PublicSubnets
+        SecurityGroups:
+          - !Ref ALBSecurityGroup
+  ALBSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: !Sub 'Security group for ALB to allow traffic from everyone on port 80. Generated by the CFN for stack: ${AWS::StackName}'
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        -
+          CidrIp: "0.0.0.0/0"
+          FromPort: 80
+          IpProtocol: "tcp"
+          ToPort: 80
+      SecurityGroupEgress:
+      -
+          IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+          - Key: CloudFormationStackId
+            Value: !Ref AWS::StackId
+          - Key: CloudFormationStackName
+            Value: !Ref AWS::StackName
+  ASGSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPC
+      GroupDescription: !Sub 'Security group for ASG to allow traffic from ALB only. Generated by the CFN for stack: ${AWS::StackName}'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+          FromPort: 80
+          ToPort: 80
+      SecurityGroupEgress:
+      -
+          IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+          - Key: CloudFormationStackId
+            Value: !Ref AWS::StackId
+          - Key: CloudFormationStackName
+            Value: !Ref AWS::StackName
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPC
+      GroupDescription: !Sub 'Security group for DB to allow traffic from ASG only. Generated by the CFN for stack: ${AWS::StackName}'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          SourceSecurityGroupId: !Ref ASGSecurityGroup
+          FromPort: 1433
+          ToPort: 1433
+      SecurityGroupEgress:
+      -
+          IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+          - Key: CloudFormationStackId
+            Value: !Ref AWS::StackId
+          - Key: CloudFormationStackName
+            Value: !Ref AWS::StackName
+  BobsUsedBooksMadAdminSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      Description: !Sub 'Password for AWS Managed Microsoft AD. Generated by the CFN for stack: ${AWS::StackName}'
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "Admin"}'
+        GenerateStringKey: 'password'
+        PasswordLength: 30
+        ExcludeCharacters: '"@/\'
+  AWSLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action: sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: AWSLambdaPolicy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Action: autoscaling:UpdateAutoScalingGroup
+            Resource:
+              Fn::Sub: arn:${AWS::Partition}:autoscaling:${AWS::Region}:${AWS::AccountId}:autoScalingGroup:*:autoScalingGroupName/${BobsUsedBooksWindowsASG}
+            Effect: Allow
+          - Action: imagebuilder:StartImagePipelineExecution
+            Resource:
+              !Ref BobsUsedBooksImagePipeline
+            Effect: Allow
+          - Action: iam:CreateServiceLinkedRole
+            Resource:
+              Fn::Sub: arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-service-role/imagebuilder.amazonaws.com/AWSServiceRoleForImageBuilder
+            Condition:
+              StringEquals:
+                "iam:AWSServiceName": "imagebuilder.amazonaws.com"
+            Effect: Allow
+          - Action: logs:CreateLogGroup
+            Resource:
+              Fn::Sub: arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*
+            Effect: Allow
+          - Action:
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - logs:CreateLogGroup
+            Resource:
+              Fn::Sub: arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*:*
+            Effect: Allow
+          - Action: iam:PassRole
+            Effect: Allow
+            Resource:
+              !GetAtt SSMInstanceProfileRole.Arn
+          - Action:
+            - ec2:RunInstances
+            - ec2:CreateTags
+            Effect: Allow
+            Resource: '*'
+            Condition:
+              ArnEquals:
+                "ec2:LaunchTemplate":
+                  Fn::Sub: arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:launch-template/${BobsUsedBooksLaunchTemplate}
+          - Action: ssm:GetParameters
+            Effect: Allow
+            Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}::parameter/aws/service/ami-windows-latest/Windows_Server-2022-English-Full-Base
+      Tags:
+        - Key: cloudformation:logical-id
+          Value: AWSLambdaRole
+        - Key: cloudformation:stack-id
+          Value: !Ref AWS::StackId
+        - Key: cloudformation:stack-name
+          Value: !Ref AWS::StackName
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: !Sub "Lambda function does 1. Update the autoscaling group to always use the default launch template 2. run image builder pipeline at the end of the cloudformation. CloudFormation stack name: ${AWS::StackName}"
+      Code:
+        ZipFile: |
+          import boto3
+          import os
+          import cfnresponse
+
+          default_region = os.environ['RegionId']
+
+          def update_autoscaling(auto_scaling_name,launch_template_id):
+              asg_client = get_asg_client(default_region)
+
+              # Update the scaling policy.
+              return asg_client.update_auto_scaling_group(
+                  AutoScalingGroupName=auto_scaling_name,
+                  LaunchTemplate={
+                  'LaunchTemplateId': launch_template_id,
+                  'Version': '$Default'
+              }
+              )
+
+          def invoke_image_builder(imagebuilder_pipeline_arn):
+
+              im_client = get_im_client(default_region)
+              # Invoke the image builder pipeline.
+              return im_client.start_image_pipeline_execution(
+                  imagePipelineArn=imagebuilder_pipeline_arn
+              )
+
+          def get_asg_client(Region):
+              return boto3.client('autoscaling', Region)
+
+          def get_im_client(Region):
+              return boto3.client('imagebuilder', Region)
+
+          def handler(event, context):
+            if event['RequestType'] == 'Delete':
+                cfnresponse.send(event, context, "SUCCESS", {"Message": "Resource deletion successful!"})
+                return
+            elif event['RequestType'] == 'Update':
+                cfnresponse.send(event, context, "SUCCESS",{"Message": "Resource update successful!"})
+            elif event['RequestType'] == 'Create':
+                launch_template=os.environ['launch_templateId']
+                auto_scaling_name=os.environ['asg_name']
+                imagebuilder_pipeline=os.environ['pipeline_arn']
+                # Update the autoscaling policy.
+                responseData = update_autoscaling(auto_scaling_name, launch_template)
+
+                # Invoke the image builder pipeline.
+                responseData = responseData | invoke_image_builder(imagebuilder_pipeline)
+
+                cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+
+      Environment:
+        Variables:
+            launch_templateId: !Ref BobsUsedBooksLaunchTemplate
+            RegionId: !Ref "AWS::Region"
+            pipeline_arn: !Ref BobsUsedBooksImagePipeline
+            asg_name: !Ref BobsUsedBooksWindowsASG
+      Handler: index.handler
+      Role: !GetAtt AWSLambdaRole.Arn
+      Runtime: python3.9
+      Timeout: 60
+  InvokeLambda:
+    Type: AWS::CloudFormation::CustomResource
+    Version: "1.0"
+    Properties:
+      ServiceToken: !GetAtt LambdaFunction.Arn
+Outputs:
+  BobsUsedBooksALBDNSName:
+    Description: The DNS name to the application load balancer to access the website.
+    Value: !GetAtt LoadBalancer.DNSName
+  BobsUsedBooksALBName:
+    Description: The name to the application load balancer.
+    Value: !GetAtt LoadBalancer.LoadBalancerName
+  BobsUsedBooksASG:
+    Description: The name to the Auto scaling group.
+    Value: !Ref BobsUsedBooksWindowsASG
+  BobsUsedBooksIBPipeline:
+    Description: The name to the image builder pipeline.
+    Value: !GetAtt BobsUsedBooksImagePipeline.Name
