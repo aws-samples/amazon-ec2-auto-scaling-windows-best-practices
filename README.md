@@ -11,8 +11,12 @@ This deploys infrastructure to run [Bob's Used Books](https://github.com/aws-sam
 ## Deployment
 ### Prerequisites
 To deploy the application to AWS you need the following:
+* An active AWS account
+* 2 [Public subnets](https://docs.aws.amazon.com/vpc/latest/userguide/configure-subnets.html#subnet-basics)
+* 2 [Private subnets](https://docs.aws.amazon.com/vpc/latest/userguide/configure-subnets.html#subnet-basics)
+* A [EC2 Key pair](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-key-pairs.html)
 
-    An AWS account and a IAM User with an attached AdministratorAccess policy
+
 
 ### Getting Started
 1. Download deployment template.  For this example we'll use the [WindowsAutoScaling.yml](/Templates/CloudFormation/WindowsAutoScaling.yml) CloudFormation template.
