@@ -12,8 +12,8 @@ This deploys infrastructure to run [Bob's Used Books](https://github.com/aws-sam
 ### Prerequisites
 To deploy the application to AWS you need the following:
 * An active AWS account
-* 2 [Public subnets](https://docs.aws.amazon.com/vpc/latest/userguide/configure-subnets.html#subnet-basics)
-* 2 [Private subnets](https://docs.aws.amazon.com/vpc/latest/userguide/configure-subnets.html#subnet-basics)
+* 2 [Public subnets](https://docs.aws.amazon.com/vpc/latest/userguide/configure-subnets.html#subnet-basics) in two different [Availability Zones](https://docs.aws.amazon.com/AWSEC2/latest/WindowsGuide/using-regions-availability-zones.html#concepts-availability-zones)
+* 2 [Private subnets](https://docs.aws.amazon.com/vpc/latest/userguide/configure-subnets.html#subnet-basics) in two different [Availability Zones](https://docs.aws.amazon.com/AWSEC2/latest/WindowsGuide/using-regions-availability-zones.html#concepts-availability-zones)
 * A [EC2 Key pair](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-key-pairs.html)
 
 
@@ -37,6 +37,23 @@ The stack template includes the following parameters:
 | PublicSubnets | Yes | A public subnet is a subnet that is associated with a route table that has a route to an Internet gateway. This connects the VPC to the Internet and to other AWS services. You much provide at least two for the internet-facing load balancer. |
 | VPC | Yes | A virtual private cloud (VPC) is a virtual network dedicated to your AWS account. It is logically isolated from other virtual networks in the AWS Cloud.
 
+
+## Deployment
+After the infrastructure has been deployed into your environment, you can test the application by changing the desired capacity for the Auto Scaling group size. 
+1. To make this change in the AWS Console, navigate to the EC2 Service and click 'Auto Scaling Groups' for the left navigation.  
+2. In the right pane, you'll see an auto scaling group prefixed by the stack name you chose earlier.  
+3. Select this group.
+4. Click Edit.
+
+![Edit](EditAutoScalingGroup.png)
+
+5. Change the Desired, Minimum, Maximum to 2 and Update.
+6. After a few minutes the EC2 will be provisioned.  To view the website we need to get the DNS of the load balancer.  Click Load Balancers from EC2 Service left navigation.
+7. In the right pane, you'll see a load balancers prefixed by the stack name you chose earlier.
+8. Select this load balancer.
+9. Copy the DNS name and paste in your browser address bar to view the application.
+
+![Load Balancer](LoadBalancer.png)
 
 ## Security
 
