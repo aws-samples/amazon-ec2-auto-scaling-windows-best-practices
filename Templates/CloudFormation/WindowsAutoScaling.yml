@@ -1,4 +1,14 @@
 AWSTemplateFormatVersion: '2010-09-09'
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Parameters:
+          - VPC
+          - PublicSubnets
+          - PrivateSubnets
+          - InstanceType
+          - KeyPair
+          - MicrosoftADDomainName
 Parameters:
   InstanceType:
     Description: Amazon EC2 instance type for the AutoScaling group.
@@ -195,13 +205,12 @@ Resources:
                   inputs:
                     commands:
                       - |
-                        Install-WindowsFeature Web-Asp-Net45,Web-Asp-Net
                         Import-Module webadministration
 
                         C:\ProgramData\chocolatey\bin\choco install git.install -y -f
 
                         $Path = New-Item -Path "c:\AutoScalingWindowsBlog\app\" -ItemType Directory -Force
-                        & "C:\Program Files\Git\cmd\git" clone https://github.com/aws-samples/bobs-used-bookstore-sample.git $Path
+                        & "C:\Program Files\Git\cmd\git" clone --depth 1 --branch v1.6.0 https://github.com/aws-samples/bobs-used-bookstore-sample.git $Path
 
                         $ProgramFile = "$Path\app\Bookstore.Web\Program.cs"
                         $ProgramFind = 'builder.ConfigureAuthentication();'
@@ -264,12 +273,6 @@ Resources:
 
                                     <div class="navbar-collapse collapse d-sm-inline-flex flex-sm-row-reverse">
                                         <ul class="navbar-nav flex-grow-1">
-                                            @if (User.Identity.IsAuthenticated)
-                                            {
-                                                <li class="nav-item">
-                                                    <a class="nav-link text-dark" asp-controller="Orders" asp-action="Index">My Orders</a>
-                                                </li>
-                                            }
                                             <li class="nav-item">
                                                 <a class="nav-link text-dark" asp-controller="Search" asp-action="Index">Search</a>
                                             </li>
@@ -288,19 +291,27 @@ Resources:
                                         </ul>
                                         <ul class="navbar-nav flex-grow-1">
                                             <li class="nav-item">
-                                                [instance id]: <a href="#">@instanceId</a>
+                                                [instance id]: <strong>@instanceId</strong>
                                             </li>
-                                            <li class="nav-item"> [az]: <a href="#">@availabilityZone</a> </li>
+                                            <li class="nav-item ps-4"> [az]: <strong>@availabilityZone</strong> </li>
                                         </ul>
                                     </div>
-
-                                    <partial name="_LoginPartial" />
                                 </div>
                             </nav>
                         </header>
                         '@
 
                         Set-Content -Path $Path\app\Bookstore.Web\Views\Shared\_NavBarPartial.cshtml -Value $NewNavBarPartial
+
+                        $LayoutFile = "$Path\app\Bookstore.Web\Views\Shared\_Layout.cshtml"
+                        $LayoutFind = '<a class="nav-link text-dark" asp-area="" asp-controller="Orders" asp-action="Index">View Orders</a>'
+                        (Get-Content $LayoutFile).replace($LayoutFind, '') | Set-Content $LayoutFile
+
+                        $ShoppingCartFile = "$Path\app\Bookstore.Web\Views\ShoppingCart\Index.cshtml"
+                        $ShoppingCartCompleteOrderFind = '<p>Please log in to complete your order.</p>'
+                        $ShoppingCartLoginFind = '<a class="btn" asp-action="Login" asp-controller="Authentication">Log In</a>'
+                        (Get-Content $ShoppingCartFile).replace($ShoppingCartCompleteOrderFind, '') | Set-Content $ShoppingCartFile
+                        (Get-Content $ShoppingCartFile).replace($ShoppingCartLoginFind, '') | Set-Content $ShoppingCartFile
 
                         $ConfigurationSetupFile = "$Path\app\Bookstore.Web\Startup\ConfigurationSetup.cs"
                         $ConfigurationSetupFind = 'builder.Configuration.AddSystemsManager("/BobsBookstore/");'
@@ -314,7 +325,7 @@ Resources:
 
                         (Get-Content $ServicesSetupFile).replace($ServicesSetupFind, $ServicesSetupReplace) | Set-Content $ServicesSetupFile
 
-                        dotnet publish $Path -o c:\inetpub\wwwroot
+                        dotnet publish -c debug $Path -o c:\inetpub\wwwroot
 
         - BobsUsedBooksDbPS: !Ref BobsUsedBooksDbSecret
   BobsUsedBooksImageRecipe:
@@ -328,9 +339,9 @@ Resources:
         - ComponentArn: !Sub "arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/update-windows/x.x.x"
         - ComponentArn: !Sub "arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/chocolatey/x.x.x"
         - ComponentArn: !Sub "arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/windows-server-iis/x.x.x"
-        - ComponentArn: !Sub "arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/dotnet-hosting-bundle-windows/x.x.x"
-        - ComponentArn: !Sub "arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/dotnet-runtime-windows/x.x.x"
-        - ComponentArn: !Sub "arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/dotnet-sdk-windows/x.x.x"
+        - ComponentArn: !Sub "arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/dotnet-hosting-bundle-windows/6.0.22/1"
+        # - ComponentArn: !Sub "arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/dotnet-runtime-windows/6.0.22/1"
+        - ComponentArn: !Sub "arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/dotnet-sdk-windows/6.0.414/1"
         - ComponentArn: !Sub "arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/aws-cli-version-2-windows/x.x.x"
         - ComponentArn: !Ref BobsUsedBooksIBCustomizedComponent
       BlockDeviceMappings:

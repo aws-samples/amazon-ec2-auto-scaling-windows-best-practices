@@ -36,13 +36,14 @@ The stack template includes the following parameters:
 | PrivateSubnets | Yes | A private subnet is a subnet that is associated with a route table that doesn't have a route to an internet gateway. You much provide at least two for the Auto Scaling group, Amazon Relational Database Service (RDS), Managed Active Directory (MAD) and other resources. |
 | InstanceType | Yes | Amazon EC2 provides a wide selection of instance types optimized to fit different use cases. Instance types comprise varying combinations of CPU, memory, storage, and networking capacity and give you the flexibility to choose the appropriate mix of resources for your applications. Each instance type includes one or more instance sizes, allowing you to scale your resources to the requirements of your target workload. |
 | KeyPair | Yes | A key pair, consisting of a public key and a private key, is a set of security credentials that you use to prove your identity when connecting to an Amazon EC2 instance. |
-| MicrosoftADDomainName | Yes | Fully qualified domain name (FQDN) of the AWS Managed Microsoft AD domain e.g. corp.example.com 
+| MicrosoftADDomainName | Yes | Fully qualified domain name (FQDN) of the AWS Managed Microsoft AD domain e.g. corp.example.com
 
 
 ## Post Deployment
-After the infrastructure has been deployed into your environment, you can test the application by changing the desired capacity for the Auto Scaling group size. 
-1. To make this change in the AWS Console, navigate to the EC2 Service and click Auto Scaling Groups for the left navigation.  
-2. In the right pane, you'll see an auto scaling group prefixed by the stack name you chose earlier.  
+### Cloudformation
+After the infrastructure has been deployed into your environment, you can test the application by changing the desired capacity for the Auto Scaling group size.
+1. To make this change in the AWS Console, navigate to the EC2 Service and click Auto Scaling Groups for the left navigation.
+2. In the right pane, you'll see an auto scaling group prefixed by the stack name you chose earlier.
 3. Select this group.
 4. Click Edit.
 
