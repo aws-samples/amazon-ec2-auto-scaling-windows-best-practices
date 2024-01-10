@@ -1,6 +1,6 @@
 # Accelerate Amazon EC2 Auto Scaling for Microsoft Windows workloads
 
-This repo hosts templates written for the AWS Blog Post "[Accelerate Amazon EC2 Auto Scaling for Microsoft Windows workloads](https://aws.amazon.com/blogs/modernizing-with-aws/how-to-create-an-amazon-ec2-ami-usage-and-billing-information-report/)" published on the [Microsoft Workloads on AWS](https://aws.amazon.com/blogs/modernizing-with-aws/) blog channel.
+This repo hosts templates written for the AWS Blog Post "[Accelerate Amazon EC2 Auto Scaling for Microsoft Windows workloads](https://aws.amazon.com/blogs/modernizing-with-aws/accelerate-amazon-ec2-auto-scaling-for-microsoft-windows-workloads/)" published on the [Microsoft Workloads on AWS](https://aws.amazon.com/blogs/modernizing-with-aws/) blog channel.
 
 ## Overview
 This deploys infrastructure to run [Bob's Used Books](https://github.com/aws-samples/bobs-used-bookstore-sample), an e-commerce website built with .NET. This sample solution leverages Amazon EC2 Auto Scaling groups to launch additional instances seamlessly during traffic spikes. This maintains application performance even under heavy load.  This solution also uses EC2 fast launch technologies to streamline the instance boot process. Rather than taking 15+ minutes for a typical Windows Server OS launch with multiple reboots, fast launch skips unnecessary steps to boot freshly launched instances.
