@@ -21,75 +21,74 @@ Parameters:
       - m5.xlarge
     Default: t3.medium
   VPC:
-    Type: 'AWS::EC2::VPC::Id'
+    Type: AWS::EC2::VPC::Id
     Description: A VPC for the Auto Scaling group, RDS, MAD and other resources
   PrivateSubnets:
-    Type: 'List<AWS::EC2::Subnet::Id>'
-    Description: A list of subnets (at least two) for the Auto Scaling group, RDS, MAD and other resources
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: A list of subnets (at least two) for the Auto Scaling group, RDS,
+      MAD and other resources
   PublicSubnets:
-    Type: 'List<AWS::EC2::Subnet::Id>'
+    Type: List<AWS::EC2::Subnet::Id>
     Description: A list of subnets (at least two) for the internet-facing load balancer
   MicrosoftADDomainName:
-    Description: Fully qualified domain name (FQDN) of the AWS Managed Microsoft AD domain e.g. corp.example.com
+    Description: Fully qualified domain name (FQDN) of the AWS Managed Microsoft AD
+      domain e.g. corp.example.com
     Type: String
     MinLength: 2
     MaxLength: 25
     AllowedPattern: ^([a-zA-Z0-9]+[\\.-])+([a-zA-Z0-9])+$
-    Default: "bobsusedbookstore.cloud"
+    Default: bobsusedbookstore.cloud
   KeyPair:
     Type: String
-    Description: "KeyPair to be use with Autoscaling Launch template."
+    Description: KeyPair to be use with Autoscaling Launch template.
 Rules:
   PrivateSubnetsInVPC:
     Assertions:
-      - Assert:
-          'Fn::EachMemberEquals':
-            - 'Fn::ValueOf':
-                - PrivateSubnets
-                - VpcId
-            - Ref: VPC
+      - Assert: !EachMemberEquals
+          - !ValueOf
+            - PrivateSubnets
+            - VpcId
+          - !Ref VPC
         AssertDescription: All private subnets must in the VPC
   PublicSubnetsInVPC:
     Assertions:
-      - Assert:
-          'Fn::EachMemberEquals':
-            - 'Fn::ValueOf':
-                - PublicSubnets
-                - VpcId
-            - Ref: VPC
+      - Assert: !EachMemberEquals
+          - !ValueOf
+            - PublicSubnets
+            - VpcId
+          - !Ref VPC
         AssertDescription: All public subnets must in the VPC
 Resources:
   SSMInstanceProfileRole:
-    Type: 'AWS::IAM::Role'
+    Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
-        Version: "2012-10-17"
+        Version: '2012-10-17'
         Statement:
           - Effect: Allow
             Principal:
               Service:
                 - ec2.amazonaws.com
             Action:
-              - 'sts:AssumeRole'
+              - sts:AssumeRole
       Policies:
         - PolicyDocument:
             Version: '2012-10-17'
             Statement:
-            - Effect: Allow
-              Action:
-              - secretsmanager:GetSecretValue
-              Resource:
-                - !Ref BobsUsedBooksSqlDbSecret
-                - !Ref BobsUsedBooksMadAdminSecret
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref BobsUsedBooksSqlDbSecret
+                  - !Ref BobsUsedBooksMadAdminSecret
           PolicyName: GetSecretManagerValue
         - PolicyDocument:
             Version: '2012-10-17'
             Statement:
-            - Effect: Allow
-              Action:
-              - ssm:GetParametersByPath
-              Resource:
-                Fn::Sub: arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*
+              - Effect: Allow
+                Action:
+                  - ssm:GetParametersByPath
+                Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*
           PolicyName: GetParametersByPath
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
@@ -101,7 +100,7 @@ Resources:
         - Key: CloudFormationStackName
           Value: !Ref AWS::StackName
   SSMInstanceProfile:
-    Type: 'AWS::IAM::InstanceProfile'
+    Type: AWS::IAM::InstanceProfile
     Properties:
       Roles:
         - !Ref SSMInstanceProfileRole
@@ -112,20 +111,20 @@ Resources:
         ImageId: resolve:ssm:/aws/service/ami-windows-latest/Windows_Server-2022-English-Full-Base
         InstanceType: !Ref InstanceType
         IamInstanceProfile:
-          Arn: !GetAtt
-            - SSMInstanceProfile
-            - Arn
+          Arn: !GetAtt SSMInstanceProfile.Arn
         KeyName: !Ref KeyPair
         NetworkInterfaces:
           - DeviceIndex: 0
-            SubnetId: !Select [0, !Ref PrivateSubnets]
+            SubnetId: !Select
+              - 0
+              - !Ref PrivateSubnets
             Groups:
               - !Ref ASGSecurityGroup
         TagSpecifications:
           - ResourceType: instance
             Tags:
-            - Key: Name
-              Value: "BobsUsedBooksInstance"
+              - Key: Name
+                Value: BobsUsedBooksInstance
   BobsUsedBooksFastLaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
     Properties:
@@ -133,19 +132,21 @@ Resources:
         InstanceType: !Ref InstanceType
         NetworkInterfaces:
           - DeviceIndex: 0
-            SubnetId: !Select [0, !Ref PrivateSubnets]
+            SubnetId: !Select
+              - 0
+              - !Ref PrivateSubnets
             Groups:
               - !Ref ASGSecurityGroup
         TagSpecifications:
           - ResourceType: instance
             Tags:
-            - Key: Name
-              Value: "BobsUsedBooksFastLaunch"
+              - Key: Name
+                Value: BobsUsedBooksFastLaunch
       TagSpecifications:
         - ResourceType: launch-template
           Tags:
-          - Key: CreatedBy
-            Value: EC2 Image Builder
+            - Key: CreatedBy
+              Value: EC2 Image Builder
   BobsUsedBooksWindowsASG:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
@@ -168,27 +169,31 @@ Resources:
           LifecycleTransition: autoscaling:EC2_INSTANCE_LAUNCHING
           DefaultResult: ABANDON
   BobsUsedBooksInfrastructureConfiguration:
-    Type: 'AWS::ImageBuilder::InfrastructureConfiguration'
+    Type: AWS::ImageBuilder::InfrastructureConfiguration
     Properties:
       Name: !Sub BobsUsedBooksInfrastructureConfiguration-${AWS::StackName}
       InstanceProfileName: !Ref SSMInstanceProfile
-      Description: !Sub 'Infrastructure Configuration for Bobs Book store Windows AutoScaling solution. Generated by the CFN for stack: ${AWS::StackName}'
+      Description: !Sub 'Infrastructure Configuration for Bobs Book store Windows
+        AutoScaling solution. Generated by the CFN for stack: ${AWS::StackName}'
       InstanceTypes:
         - t3.medium
         - t3.large
       SecurityGroupIds:
         - !Ref ASGSecurityGroup
-      SubnetId: !Select [0, !Ref PrivateSubnets]
+      SubnetId: !Select
+        - 0
+        - !Ref PrivateSubnets
       Tags:
         CloudFormationStackName: !Ref AWS::StackName
         CloudFormationStackId: !Ref AWS::StackId
   BobsUsedBooksIBCustomizedComponent:
-    Type: 'AWS::ImageBuilder::Component'
+    Type: AWS::ImageBuilder::Component
     Properties:
       Name: !Sub BobsUsedBooksCustomizedComponent-${AWS::StackName}
-      Platform: 'Windows'
-      Version: '1.0.0'
-      Description: !Sub 'Customized Component for Bobs Book store Windows AutoScaling solution. Generated by the CFN for stack: ${AWS::StackName}'
+      Platform: Windows
+      Version: 1.0.0
+      Description: !Sub 'Customized Component for Bobs Book store Windows AutoScaling
+        solution. Generated by the CFN for stack: ${AWS::StackName}'
       Tags:
         CloudFormationStackName: !Ref AWS::StackName
         CloudFormationStackId: !Ref AWS::StackId
@@ -206,25 +211,18 @@ Resources:
                     commands:
                       - |
                         Import-Module webadministration
-
                         C:\ProgramData\chocolatey\bin\choco install git.install -y -f
-
                         $Path = New-Item -Path "c:\AutoScalingWindowsBlog\app\" -ItemType Directory -Force
                         & "C:\Program Files\Git\cmd\git" clone --depth 1 --branch v1.6.0 https://github.com/aws-samples/bobs-used-bookstore-sample.git $Path
-
                         $ProgramFile = "$Path\app\Bookstore.Web\Program.cs"
                         $ProgramFind = 'builder.ConfigureAuthentication();'
                         $ProgramReplace = '// builder.ConfigureAuthentication();'
-
                         (Get-Content $ProgramFile).replace($ProgramFind, $ProgramReplace) | Set-Content $ProgramFile
-
                         $NewWebContent=@'
                         <Project Sdk="Microsoft.NET.Sdk.Web">
-
                             <PropertyGroup>
                                 <TargetFramework>net6.0</TargetFramework>
                             </PropertyGroup>
-
                             <ItemGroup>
                                 <PackageReference Include="Amazon.Extensions.Configuration.SystemsManager" Version="2.1.0" />
                                 <PackageReference Include="AWS.Logger.AspNetCore" Version="3.3.0" />
@@ -239,12 +237,10 @@ Resources:
                                 </PackageReference>
                                 <PackageReference Include="Microsoft.VisualStudio.Web.CodeGeneration.Design" Version="6.0.11" />
                             </ItemGroup>
-
                             <ItemGroup>
                               <ProjectReference Include="..\Bookstore.Data\Bookstore.Data.csproj" />
                               <ProjectReference Include="..\Bookstore.Domain\Bookstore.Domain.csproj" />
                             </ItemGroup>
-
                             <ItemGroup>
                               <Folder Include="Controllers\" />
                               <Folder Include="wwwroot\css\" />
@@ -252,25 +248,20 @@ Resources:
                             </ItemGroup>
                         </Project>
                         '@
-
                         Set-Content -Path $Path\app\Bookstore.Web\Bookstore.Web.csproj -Value $NewWebContent
-
                         $NewNavBarPartial=@'
                         @{
                             var instanceId = Amazon.Util.EC2InstanceMetadata.GetData("/instance-id");
                             var availabilityZone = Amazon.Util.EC2InstanceMetadata.GetData("/placement/availability-zone");
                         }
-
                         <header>
                             <nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-light bg-white border-bottom box-shadow mb-3">
                                 <div class="container-fluid">
                                     <a class="navbar-brand" asp-controller="Home" asp-action="Index">Bob's Used Books</a>
-
                                     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportContent" aria-controls="navbarSupportedContent"
                                             aria-expanded="false" aria-label="Toggle navigation">
                                         <span class="navbar-toggler-icon"></span>
                                     </button>
-
                                     <div class="navbar-collapse collapse d-sm-inline-flex flex-sm-row-reverse">
                                         <ul class="navbar-nav flex-grow-1">
                                             <li class="nav-item">
@@ -300,405 +291,391 @@ Resources:
                             </nav>
                         </header>
                         '@
-
                         Set-Content -Path $Path\app\Bookstore.Web\Views\Shared\_NavBarPartial.cshtml -Value $NewNavBarPartial
-
                         $LayoutFile = "$Path\app\Bookstore.Web\Views\Shared\_Layout.cshtml"
                         $LayoutFind = '<a class="nav-link text-dark" asp-area="" asp-controller="Orders" asp-action="Index">View Orders</a>'
                         (Get-Content $LayoutFile).replace($LayoutFind, '') | Set-Content $LayoutFile
-
                         $ShoppingCartFile = "$Path\app\Bookstore.Web\Views\ShoppingCart\Index.cshtml"
                         $ShoppingCartCompleteOrderFind = '<p>Please log in to complete your order.</p>'
                         $ShoppingCartLoginFind = '<a class="btn" asp-action="Login" asp-controller="Authentication">Log In</a>'
                         (Get-Content $ShoppingCartFile).replace($ShoppingCartCompleteOrderFind, '') | Set-Content $ShoppingCartFile
                         (Get-Content $ShoppingCartFile).replace($ShoppingCartLoginFind, '') | Set-Content $ShoppingCartFile
-
                         $ConfigurationSetupFile = "$Path\app\Bookstore.Web\Startup\ConfigurationSetup.cs"
                         $ConfigurationSetupFind = 'builder.Configuration.AddSystemsManager("/BobsBookstore/");'
                         $ConfigurationSetupReplace = 'builder.Configuration.AddSystemsManager("/");'
-
                         (Get-Content $ConfigurationSetupFile).replace($ConfigurationSetupFind, $ConfigurationSetupReplace) | Set-Content $ConfigurationSetupFile
-
                         $ServicesSetupFile = "$Path\app\Bookstore.Web\Startup\ServicesSetup.cs"
                         $ServicesSetupFind = 'const string DbSecretsParameterName = "dbsecretsname";'
                         $ServicesSetupReplace = "const string DbSecretsParameterName = `"${ BobsUsedBooksDbPS }`";"
-
                         (Get-Content $ServicesSetupFile).replace($ServicesSetupFind, $ServicesSetupReplace) | Set-Content $ServicesSetupFile
-
                         dotnet publish -c debug $Path -o c:\inetpub\wwwroot
 
         - BobsUsedBooksDbPS: !Ref BobsUsedBooksDbSecret
   BobsUsedBooksIBCustomizedDotNet6HostingComponent:
-    Type: 'AWS::ImageBuilder::Component'
+    Type: AWS::ImageBuilder::Component
     Properties:
       Name: !Sub dotnet-hosting-bundle-windows-${AWS::StackName}
-      Platform: 'Windows'
-      Version: '6.0.22'
-      Description: !Sub 'Installs the ASP.NET Core Hosting Bundle version 6.0.22. The hosting bundle includes the .NET Runtime and IIS support. For more information, see the .NET 6.0 download page at https://dotnet.microsoft.com/download/dotnet/6.0. Generated by the CFN for stack: ${AWS::StackName}'
+      Platform: Windows
+      Version: 6.0.22
+      Description: !Sub 'Installs the ASP.NET Core Hosting Bundle version 6.0.22. The
+        hosting bundle includes the .NET Runtime and IIS support. For more
+        information, see the .NET 6.0 download page at
+        https://dotnet.microsoft.com/download/dotnet/6.0. Generated by the CFN
+        for stack: ${AWS::StackName}'
       Tags:
         CloudFormationStackName: !Ref AWS::StackName
         CloudFormationStackId: !Ref AWS::StackId
       Data: |
-          # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
-          # SPDX-License-Identifier: MIT-0
-          #
-          # Permission is hereby granted, free of charge, to any person obtaining a copy of this
-          # software and associated documentation files (the "Software"), to deal in the Software
-          # without restriction, including without limitation the rights to use, copy, modify,
-          # merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
-          # permit persons to whom the Software is furnished to do so.
-          #
-          # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
-          # INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-          # PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
-          # HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-          # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-          # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-          name: ASP.NET Core Hosting Bundle 6.0.22
-          description: Installs the ASP.NET Core Hosting Bundle version 6.0.22. The hosting bundle includes the .NET Runtime and IIS support. For more information, see the .NET 6.0 download page at https://dotnet.microsoft.com/download/dotnet/6.0.
-          schemaVersion: 1.0
-          constants:
-            # Source Url and Checksum values from:
-            # https://dotnet.microsoft.com/download/dotnet/thank-you/runtime-aspnetcore-6.0.22-windows-hosting-bundle-installer
-            - InstallerUri:
-                type: string
-                value: 'https://download.visualstudio.microsoft.com/download/pr/6127ac20-be25-437d-ab6a-e90415f3d547/f572f0b58361ccff32a961ad4446bb24/dotnet-hosting-6.0.22-win.exe'
-            - Checksum:
-                type: string
-                value: '19df24fe6272e6a162a701d8b96c505be560b19b4d13d73fa9ac2a94148187f666cc123d2383efd18e2857af27db3c580f16c8045ddbf1ac2f1507bec8a52fe3'
-            - Application:
-                type: string
-                value: 'dotnet'
-            - RuntimeVersion:
-                type: string
-                value: '6.0.22'
-            - ExitWithFailure:
-                type: string
-                value: '[System.Environment]::Exit(1)'
-          phases:
-            - name: build
-              steps:
-                - name: InstallerDestination
-                  action: ExecutePowerShell
-                  onFailure: Abort
-                  timeoutSeconds: 60
-                  inputs:
-                    commands:
-                      - $fileName = '{{ InstallerUri }}'.Split('/')[-1]
-                      - Join-Path -Path $env:TEMP -ChildPath $fileName
-                - name: InstallerDownload
-                  action: WebDownload
-                  maxAttempts: 3
-                  onFailure: Abort
-                  inputs:
-                    - source: '{{ InstallerUri }}'
-                      destination: '{{ build.InstallerDestination.outputs.stdout }}'
-                      checksum: '{{ Checksum }}'
-                      algorithm: SHA512
-                      overwrite: true
-                - name: LogFile
-                  action: ExecutePowerShell
-                  onFailure: Abort
-                  timeoutSeconds: 60
-                  inputs:
-                    commands:
-                      - $fileName = '{{ InstallerUri }}'.split('/')[-1]
-                      - $fileNameWithExtension = $fileName.Replace('.exe','.log')
-                      - Join-Path -Path $env:TEMP -ChildPath $fileNameWithExtension
-                - name: Install
-                  action: ExecuteBinary
-                  onFailure: Abort
-                  timeoutSeconds: 600
-                  inputs:
-                    path: '{{ build.InstallerDestination.outputs.stdout }}'
-                    arguments:
-                      - '/install'
-                      - '/quiet'
-                      - '/norestart'
-                      - '/log {{ build.LogFile.outputs.stdout }}'
-                - name: Cleanup
-                  action: DeleteFile
-                  onFailure: Abort
-                  inputs:
-                    - path: '{{ build.InstallerDestination.outputs.stdout }}'
-                    - path: '{{ build.LogFile.outputs.stdout }}'
-
-            - name: validate
-              steps:
-                - name: EnvironmentVariablePathValue
-                  action: ExecutePowerShell
-                  onFailure: Abort
-                  timeoutSeconds: 60
-                  inputs:
-                    commands:
-                      - |
-                        $getItemProperty = @{
-                            Path = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment'
-                        }
-                        Write-Host (Get-ItemProperty @getItemProperty).Path
-                - name: ValidatePathEnvironmentVariable
-                  action: ExecutePowerShell
-                  onFailure: Abort
-                  timeoutSeconds: 60
-                  inputs:
-                    commands:
-                      - |
-                        $ErrorActionPreference = 'Stop'
-                        $applicationName = '{{ Application }}'
-
-                        # Validating with the application install path
-                        $pathsToValidate = @(
-                            "$env:ProgramFiles\$applicationName"
-                        )
-                        foreach ($path in $pathsToValidate) {
-                            if ('{{ validate.EnvironmentVariablePathValue.outputs.stdout }}' -like "*$path*") {
-                                Write-Host "Added $path directory to Environment Variable 'PATH'."
-                            }
-                            else {
-                                Write-Host "Failed to add $path directory to Environment Variable 'PATH'. Failing build."
-                                {{ ExitWithFailure }}
-                            }
-                        }
-                - name: ValidateRuntime
-                  action: ExecutePowerShell
-                  onFailure: Abort
-                  timeoutSeconds: 60
-                  inputs:
-                    commands:
-                      - |
-                        $ErrorActionPreference = 'Stop'
-                        $applicationName = '{{ Application }}'
-                        $runtimeVersion = '{{ RuntimeVersion }}'
-
-                        Write-Host 'Invoking the dotnet CLI to ensure that the installed runtimes can be found...'
-
-                        # Validating with the full binary paths
-                        $binariesToTest = @(
-                            Join-Path -Path "$env:ProgramFiles\$applicationName" -ChildPath "$applicationName.exe"
-                            Join-Path -Path "${env:ProgramFiles(x86)}\$applicationName" -ChildPath "$applicationName.exe"
-                        )
-
-                        foreach ($binary in $binariesToTest) {
-                            echo "Invoking command: '$binary' --list-runtimes"
-                            $output = & "$binary" --list-runtimes
-
-                            $runtimeRegex = @(
-                                "^Microsoft.AspNetCore.App $version"
-                                "^Microsoft.NETCore.App $version"
-                            )
-                            foreach ($regex in $runtimeRegex) {
-                                if ($output -match $regex) {
-                                    Write-Host "- Found '$regex'."
-                                }
-                                else {
-                                    Write-Host "- Unable to find '$regex'. Failing build."
-                                    {{ ExitWithFailure }}
-                                }
-                            }
-                        }        
+        # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+        # SPDX-License-Identifier: MIT-0
+        #
+        # Permission is hereby granted, free of charge, to any person obtaining a copy of this
+        # software and associated documentation files (the "Software"), to deal in the Software
+        # without restriction, including without limitation the rights to use, copy, modify,
+        # merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+        # permit persons to whom the Software is furnished to do so.
+        #
+        # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+        # INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+        # PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+        # HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+        # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+        # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+        name: ASP.NET Core Hosting Bundle 6.0.22
+        description: Installs the ASP.NET Core Hosting Bundle version 6.0.22. The hosting bundle includes the .NET Runtime and IIS support. For more information, see the .NET 6.0 download page at https://dotnet.microsoft.com/download/dotnet/6.0.
+        schemaVersion: 1.0
+        constants:
+          # Source Url and Checksum values from:
+          # https://dotnet.microsoft.com/download/dotnet/thank-you/runtime-aspnetcore-6.0.22-windows-hosting-bundle-installer
+          - InstallerUri:
+              type: string
+              value: 'https://download.visualstudio.microsoft.com/download/pr/6127ac20-be25-437d-ab6a-e90415f3d547/f572f0b58361ccff32a961ad4446bb24/dotnet-hosting-6.0.22-win.exe'
+          - Checksum:
+              type: string
+              value: '19df24fe6272e6a162a701d8b96c505be560b19b4d13d73fa9ac2a94148187f666cc123d2383efd18e2857af27db3c580f16c8045ddbf1ac2f1507bec8a52fe3'
+          - Application:
+              type: string
+              value: 'dotnet'
+          - RuntimeVersion:
+              type: string
+              value: '6.0.22'
+          - ExitWithFailure:
+              type: string
+              value: '[System.Environment]::Exit(1)'
+        phases:
+          - name: build
+            steps:
+              - name: InstallerDestination
+                action: ExecutePowerShell
+                onFailure: Abort
+                timeoutSeconds: 60
+                inputs:
+                  commands:
+                    - $fileName = '{{ InstallerUri }}'.Split('/')[-1]
+                    - Join-Path -Path $env:TEMP -ChildPath $fileName
+              - name: InstallerDownload
+                action: WebDownload
+                maxAttempts: 3
+                onFailure: Abort
+                inputs:
+                  - source: '{{ InstallerUri }}'
+                    destination: '{{ build.InstallerDestination.outputs.stdout }}'
+                    checksum: '{{ Checksum }}'
+                    algorithm: SHA512
+                    overwrite: true
+              - name: LogFile
+                action: ExecutePowerShell
+                onFailure: Abort
+                timeoutSeconds: 60
+                inputs:
+                  commands:
+                    - $fileName = '{{ InstallerUri }}'.split('/')[-1]
+                    - $fileNameWithExtension = $fileName.Replace('.exe','.log')
+                    - Join-Path -Path $env:TEMP -ChildPath $fileNameWithExtension
+              - name: Install
+                action: ExecuteBinary
+                onFailure: Abort
+                timeoutSeconds: 600
+                inputs:
+                  path: '{{ build.InstallerDestination.outputs.stdout }}'
+                  arguments:
+                    - '/install'
+                    - '/quiet'
+                    - '/norestart'
+                    - '/log {{ build.LogFile.outputs.stdout }}'
+              - name: Cleanup
+                action: DeleteFile
+                onFailure: Abort
+                inputs:
+                  - path: '{{ build.InstallerDestination.outputs.stdout }}'
+                  - path: '{{ build.LogFile.outputs.stdout }}'
+          - name: validate
+            steps:
+              - name: EnvironmentVariablePathValue
+                action: ExecutePowerShell
+                onFailure: Abort
+                timeoutSeconds: 60
+                inputs:
+                  commands:
+                    - |
+                      $getItemProperty = @{
+                          Path = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment'
+                      }
+                      Write-Host (Get-ItemProperty @getItemProperty).Path
+              - name: ValidatePathEnvironmentVariable
+                action: ExecutePowerShell
+                onFailure: Abort
+                timeoutSeconds: 60
+                inputs:
+                  commands:
+                    - |
+                      $ErrorActionPreference = 'Stop'
+                      $applicationName = '{{ Application }}'
+                      # Validating with the application install path
+                      $pathsToValidate = @(
+                          "$env:ProgramFiles\$applicationName"
+                      )
+                      foreach ($path in $pathsToValidate) {
+                          if ('{{ validate.EnvironmentVariablePathValue.outputs.stdout }}' -like "*$path*") {
+                              Write-Host "Added $path directory to Environment Variable 'PATH'."
+                          }
+                          else {
+                              Write-Host "Failed to add $path directory to Environment Variable 'PATH'. Failing build."
+                              {{ ExitWithFailure }}
+                          }
+                      }
+              - name: ValidateRuntime
+                action: ExecutePowerShell
+                onFailure: Abort
+                timeoutSeconds: 60
+                inputs:
+                  commands:
+                    - |
+                      $ErrorActionPreference = 'Stop'
+                      $applicationName = '{{ Application }}'
+                      $runtimeVersion = '{{ RuntimeVersion }}'
+                      Write-Host 'Invoking the dotnet CLI to ensure that the installed runtimes can be found...'
+                      # Validating with the full binary paths
+                      $binariesToTest = @(
+                          Join-Path -Path "$env:ProgramFiles\$applicationName" -ChildPath "$applicationName.exe"
+                          Join-Path -Path "${env:ProgramFiles(x86)}\$applicationName" -ChildPath "$applicationName.exe"
+                      )
+                      foreach ($binary in $binariesToTest) {
+                          echo "Invoking command: '$binary' --list-runtimes"
+                          $output = & "$binary" --list-runtimes
+                          $runtimeRegex = @(
+                              "^Microsoft.AspNetCore.App $version"
+                              "^Microsoft.NETCore.App $version"
+                          )
+                          foreach ($regex in $runtimeRegex) {
+                              if ($output -match $regex) {
+                                  Write-Host "- Found '$regex'."
+                              }
+                              else {
+                                  Write-Host "- Unable to find '$regex'. Failing build."
+                                  {{ ExitWithFailure }}
+                              }
+                          }
+                      }
   BobsUsedBooksIBCustomizedDotNet6SdkComponent:
-    Type: 'AWS::ImageBuilder::Component'
+    Type: AWS::ImageBuilder::Component
     Properties:
       Name: !Sub dotnet-sdk-windows-${AWS::StackName}
-      Platform: 'Windows'
-      Version: '6.0.414'
-      Description: !Sub 'Installs the Microsoft .NET SDK version 6.0.414. The installation includes version 6.0.22 of the ASP.NET Core Runtime, the .NET Runtime, and the Desktop Runtime. For more information, see the .NET 6.0 download page at https://dotnet.microsoft.com/download/dotnet/6.0. Generated by the CFN for stack: ${AWS::StackName}'
+      Platform: Windows
+      Version: 6.0.414
+      Description: !Sub 'Installs the Microsoft .NET SDK version 6.0.414. The
+        installation includes version 6.0.22 of the ASP.NET Core Runtime, the
+        .NET Runtime, and the Desktop Runtime. For more information, see the
+        .NET 6.0 download page at
+        https://dotnet.microsoft.com/download/dotnet/6.0. Generated by the CFN
+        for stack: ${AWS::StackName}'
       Tags:
         CloudFormationStackName: !Ref AWS::StackName
         CloudFormationStackId: !Ref AWS::StackId
       Data: |
-          # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
-          # SPDX-License-Identifier: MIT-0
-          #
-          # Permission is hereby granted, free of charge, to any person obtaining a copy of this
-          # software and associated documentation files (the "Software"), to deal in the Software
-          # without restriction, including without limitation the rights to use, copy, modify,
-          # merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
-          # permit persons to whom the Software is furnished to do so.
-          #
-          # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
-          # INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-          # PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
-          # HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-          # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-          # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-          name: .NET SDK 6.0.414
-          description: Installs the Microsoft .NET SDK version 6.0.414. The installation includes version 6.0.22 of the ASP.NET Core Runtime, the .NET Runtime, and the Desktop Runtime. For more information, see the .NET 6.0 download page at https://dotnet.microsoft.com/download/dotnet/6.0.
-          schemaVersion: 1.0
-          constants:
-            # Source Url and Checksum values from:
-            # https://dotnet.microsoft.com/download/dotnet/thank-you/sdk-6.0.414-windows-x64-installer
-            - InstallerUri:
-                type: string
-                value: 'https://download.visualstudio.microsoft.com/download/pr/1344d6ee-3e0e-43e7-ad65-61ce8bcce2de/1339c0073340fedfdd28dd9bfb9a5fb6/dotnet-sdk-6.0.414-win-x64.exe'
-            - Checksum:
-                type: string
-                value: 'e24ab9c5d29f42685afb4ffe444dde03329ed1c76a339dc0dd397057f8392c719855fc2883ffb146ab5bac668e3bfc2692aacdfa5bca11191b41ce31edb5ae38'
-            - Application:
-                type: string
-                value: 'dotnet'
-            - RuntimeVersion:
-                type: string
-                value: '6.0.22'
-            - SDKVersion:
-                type: string
-                value: '6.0.414'
-            - ExitWithFailure:
-                type: string
-                value: '[System.Environment]::Exit(1)'
-          phases:
-            - name: build
-              steps:
-                - name: InstallerDestination
-                  action: ExecutePowerShell
-                  onFailure: Abort
-                  timeoutSeconds: 60
-                  inputs:
-                    commands:
-                      - $fileName = '{{ InstallerUri }}'.Split('/')[-1]
-                      - Join-Path -Path $env:TEMP -ChildPath $fileName
-                - name: InstallerDownload
-                  action: WebDownload
-                  maxAttempts: 3
-                  onFailure: Abort
-                  inputs:
-                    - source: '{{ InstallerUri }}'
-                      destination: '{{ build.InstallerDestination.outputs.stdout }}'
-                      checksum: '{{ Checksum }}'
-                      algorithm: SHA512
-                      overwrite: true
-                - name: LogFile
-                  action: ExecutePowerShell
-                  onFailure: Abort
-                  timeoutSeconds: 60
-                  inputs:
-                    commands:
-                      - $fileName = '{{ InstallerUri }}'.split('/')[-1]
-                      - $fileNameWithExtension = $fileName.Replace('.exe','.log')
-                      - Join-Path -Path $env:TEMP -ChildPath $fileNameWithExtension
-                - name: Install
-                  action: ExecuteBinary
-                  onFailure: Abort
-                  timeoutSeconds: 600
-                  inputs:
-                    path: '{{ build.InstallerDestination.outputs.stdout }}'
-                    arguments:
-                      - '/install'
-                      - '/quiet'
-                      - '/norestart'
-                      - '/log {{ build.LogFile.outputs.stdout }}'
-                - name: Cleanup
-                  action: DeleteFile
-                  onFailure: Abort
-                  inputs:
-                    - path: '{{ build.InstallerDestination.outputs.stdout }}'
-                    - path: '{{ build.LogFile.outputs.stdout }}'
-
-            - name: validate
-              steps:
-                - name: EnvironmentVariablePathValue
-                  action: ExecutePowerShell
-                  onFailure: Abort
-                  timeoutSeconds: 60
-                  inputs:
-                    commands:
-                      - |
-                        $getItemProperty = @{
-                            Path = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment'
-                        }
-                        Write-Host (Get-ItemProperty @getItemProperty).Path
-                - name: ValidatePathEnvironmentVariable
-                  action: ExecutePowerShell
-                  onFailure: Abort
-                  timeoutSeconds: 60
-                  inputs:
-                    commands:
-                      - |
-                        $ErrorActionPreference = 'Stop'
-                        $applicationName = '{{ Application }}'
-
-                        # Validating with the application install path
-                        $path = "$env:ProgramFiles\$applicationName"
-
-                        if ('{{ validate.EnvironmentVariablePathValue.outputs.stdout }}' -like "*$path*") {
-                            Write-Host "Added $path directory to Environment Variable 'PATH'."
-                        }
-                        else {
-                            Write-Host "Failed to add $path directory to Environment Variable 'PATH'. Failing build."
-                            {{ ExitWithFailure }}
-                        }
-                - name: ValidateRuntime
-                  action: ExecutePowerShell
-                  onFailure: Abort
-                  timeoutSeconds: 60
-                  inputs:
-                    commands:
-                      - |
-                        $ErrorActionPreference = 'Stop'
-                        $applicationName = '{{ Application }}'
-                        $runtimeVersion = '{{ RuntimeVersion }}'
-
-                        Write-Host 'Invoking the dotnet CLI to ensure that the installed runtimes can be found...'
-
-                        # Validating with the full binary path
-                        $binary = Join-Path -Path "$env:ProgramFiles\$applicationName" -ChildPath "$applicationName.exe"
-                        $runtimeRegex = @(
-                            "^Microsoft.AspNetCore.App $version"
-                            "^Microsoft.NETCore.App $version"
-                        )
-
-                        echo "Invoking command: '$binary' --list-runtimes"
-                        $output = & "$binary" --list-runtimes
-
-                        foreach ($regex in $runtimeRegex) {
-                            if ($output -match $regex) {
-                                Write-Host "- Found '$regex'."
-                            }
-                            else {
-                                Write-Host "- Unable to find '$regex'. Failing build."
-                                {{ ExitWithFailure }}
-                            }
-                        }
-                - name: ValidateSDK
-                  action: ExecutePowerShell
-                  onFailure: Abort
-                  timeoutSeconds: 60
-                  inputs:
-                    commands:
-                      - |
-                        $ErrorActionPreference = 'Stop'
-                        $applicationName = '{{ Application }}'
-                        $sdkVersion = '{{ SDKVersion }}'
-
-                        # Validating with the full binary path
-                        $binary = Join-Path -Path "$env:ProgramFiles\$applicationName" -ChildPath "$applicationName.exe"
-                        $regex = "^$sdkVersion"
-
-                        echo "Invoking command: '$binary' --list-sdks"
-                        $output = & "$binary" --list-sdks
-
-                        if ($output -match $regex) {
-                            Write-Host "Found .NET SDK version $sdkVersion."
-                        }
-                        else {
-                            Write-Host "Unable to find .NET SDK version $sdkVersion. Failing build."
-                            {{ ExitWithFailure }}
-                        }
+        # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+        # SPDX-License-Identifier: MIT-0
+        #
+        # Permission is hereby granted, free of charge, to any person obtaining a copy of this
+        # software and associated documentation files (the "Software"), to deal in the Software
+        # without restriction, including without limitation the rights to use, copy, modify,
+        # merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+        # permit persons to whom the Software is furnished to do so.
+        #
+        # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+        # INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+        # PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+        # HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+        # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+        # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+        name: .NET SDK 6.0.414
+        description: Installs the Microsoft .NET SDK version 6.0.414. The installation includes version 6.0.22 of the ASP.NET Core Runtime, the .NET Runtime, and the Desktop Runtime. For more information, see the .NET 6.0 download page at https://dotnet.microsoft.com/download/dotnet/6.0.
+        schemaVersion: 1.0
+        constants:
+          # Source Url and Checksum values from:
+          # https://dotnet.microsoft.com/download/dotnet/thank-you/sdk-6.0.414-windows-x64-installer
+          - InstallerUri:
+              type: string
+              value: 'https://download.visualstudio.microsoft.com/download/pr/1344d6ee-3e0e-43e7-ad65-61ce8bcce2de/1339c0073340fedfdd28dd9bfb9a5fb6/dotnet-sdk-6.0.414-win-x64.exe'
+          - Checksum:
+              type: string
+              value: 'e24ab9c5d29f42685afb4ffe444dde03329ed1c76a339dc0dd397057f8392c719855fc2883ffb146ab5bac668e3bfc2692aacdfa5bca11191b41ce31edb5ae38'
+          - Application:
+              type: string
+              value: 'dotnet'
+          - RuntimeVersion:
+              type: string
+              value: '6.0.22'
+          - SDKVersion:
+              type: string
+              value: '6.0.414'
+          - ExitWithFailure:
+              type: string
+              value: '[System.Environment]::Exit(1)'
+        phases:
+          - name: build
+            steps:
+              - name: InstallerDestination
+                action: ExecutePowerShell
+                onFailure: Abort
+                timeoutSeconds: 60
+                inputs:
+                  commands:
+                    - $fileName = '{{ InstallerUri }}'.Split('/')[-1]
+                    - Join-Path -Path $env:TEMP -ChildPath $fileName
+              - name: InstallerDownload
+                action: WebDownload
+                maxAttempts: 3
+                onFailure: Abort
+                inputs:
+                  - source: '{{ InstallerUri }}'
+                    destination: '{{ build.InstallerDestination.outputs.stdout }}'
+                    checksum: '{{ Checksum }}'
+                    algorithm: SHA512
+                    overwrite: true
+              - name: LogFile
+                action: ExecutePowerShell
+                onFailure: Abort
+                timeoutSeconds: 60
+                inputs:
+                  commands:
+                    - $fileName = '{{ InstallerUri }}'.split('/')[-1]
+                    - $fileNameWithExtension = $fileName.Replace('.exe','.log')
+                    - Join-Path -Path $env:TEMP -ChildPath $fileNameWithExtension
+              - name: Install
+                action: ExecuteBinary
+                onFailure: Abort
+                timeoutSeconds: 600
+                inputs:
+                  path: '{{ build.InstallerDestination.outputs.stdout }}'
+                  arguments:
+                    - '/install'
+                    - '/quiet'
+                    - '/norestart'
+                    - '/log {{ build.LogFile.outputs.stdout }}'
+              - name: Cleanup
+                action: DeleteFile
+                onFailure: Abort
+                inputs:
+                  - path: '{{ build.InstallerDestination.outputs.stdout }}'
+                  - path: '{{ build.LogFile.outputs.stdout }}'
+          - name: validate
+            steps:
+              - name: EnvironmentVariablePathValue
+                action: ExecutePowerShell
+                onFailure: Abort
+                timeoutSeconds: 60
+                inputs:
+                  commands:
+                    - |
+                      $getItemProperty = @{
+                          Path = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment'
+                      }
+                      Write-Host (Get-ItemProperty @getItemProperty).Path
+              - name: ValidatePathEnvironmentVariable
+                action: ExecutePowerShell
+                onFailure: Abort
+                timeoutSeconds: 60
+                inputs:
+                  commands:
+                    - |
+                      $ErrorActionPreference = 'Stop'
+                      $applicationName = '{{ Application }}'
+                      # Validating with the application install path
+                      $path = "$env:ProgramFiles\$applicationName"
+                      if ('{{ validate.EnvironmentVariablePathValue.outputs.stdout }}' -like "*$path*") {
+                          Write-Host "Added $path directory to Environment Variable 'PATH'."
+                      }
+                      else {
+                          Write-Host "Failed to add $path directory to Environment Variable 'PATH'. Failing build."
+                          {{ ExitWithFailure }}
+                      }
+              - name: ValidateRuntime
+                action: ExecutePowerShell
+                onFailure: Abort
+                timeoutSeconds: 60
+                inputs:
+                  commands:
+                    - |
+                      $ErrorActionPreference = 'Stop'
+                      $applicationName = '{{ Application }}'
+                      $runtimeVersion = '{{ RuntimeVersion }}'
+                      Write-Host 'Invoking the dotnet CLI to ensure that the installed runtimes can be found...'
+                      # Validating with the full binary path
+                      $binary = Join-Path -Path "$env:ProgramFiles\$applicationName" -ChildPath "$applicationName.exe"
+                      $runtimeRegex = @(
+                          "^Microsoft.AspNetCore.App $version"
+                          "^Microsoft.NETCore.App $version"
+                      )
+                      echo "Invoking command: '$binary' --list-runtimes"
+                      $output = & "$binary" --list-runtimes
+                      foreach ($regex in $runtimeRegex) {
+                          if ($output -match $regex) {
+                              Write-Host "- Found '$regex'."
+                          }
+                          else {
+                              Write-Host "- Unable to find '$regex'. Failing build."
+                              {{ ExitWithFailure }}
+                          }
+                      }
+              - name: ValidateSDK
+                action: ExecutePowerShell
+                onFailure: Abort
+                timeoutSeconds: 60
+                inputs:
+                  commands:
+                    - |
+                      $ErrorActionPreference = 'Stop'
+                      $applicationName = '{{ Application }}'
+                      $sdkVersion = '{{ SDKVersion }}'
+                      # Validating with the full binary path
+                      $binary = Join-Path -Path "$env:ProgramFiles\$applicationName" -ChildPath "$applicationName.exe"
+                      $regex = "^$sdkVersion"
+                      echo "Invoking command: '$binary' --list-sdks"
+                      $output = & "$binary" --list-sdks
+                      if ($output -match $regex) {
+                          Write-Host "Found .NET SDK version $sdkVersion."
+                      }
+                      else {
+                          Write-Host "Unable to find .NET SDK version $sdkVersion. Failing build."
+                          {{ ExitWithFailure }}
+                      }
   BobsUsedBooksImageRecipe:
     Type: AWS::ImageBuilder::ImageRecipe
     Properties:
       Name: !Sub BobsUsedBooksImageRecipe-${AWS::StackName}
-      Version: '1.0.0'
-      ParentImage: !Sub 'arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:image/windows-server-2022-english-full-base-x86/x.x.x'
-      Description: !Sub 'Image Recipe for Bobs Book store Windows AutoScaling solution. Generated by the CFN for stack: ${AWS::StackName}'
+      Version: 1.0.0
+      ParentImage: !Sub arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:image/windows-server-2022-english-full-base-x86/x.x.x
+      Description: !Sub 'Image Recipe for Bobs Book store Windows AutoScaling
+        solution. Generated by the CFN for stack: ${AWS::StackName}'
       Components:
-        - ComponentArn: !Sub "arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/update-windows/x.x.x"
-        - ComponentArn: !Sub "arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/chocolatey/x.x.x"
-        - ComponentArn: !Sub "arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/windows-server-iis/x.x.x"
+        - ComponentArn: !Sub arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/update-windows/x.x.x
+        - ComponentArn: !Sub arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/chocolatey/x.x.x
+        - ComponentArn: !Sub arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/windows-server-iis/x.x.x
         # - ComponentArn: !Sub "arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/dotnet-hosting-bundle-windows/6.0.22/1"
         # # - ComponentArn: !Sub "arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/dotnet-runtime-windows/6.0.22/1"
         # - ComponentArn: !Sub "arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/dotnet-sdk-windows/6.0.414/1"
-        - ComponentArn: !Sub "arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/aws-cli-version-2-windows/x.x.x"
+        - ComponentArn: !Sub arn:${AWS::Partition}:imagebuilder:${AWS::Region}:aws:component/aws-cli-version-2-windows/x.x.x
         - ComponentArn: !Ref BobsUsedBooksIBCustomizedDotNet6HostingComponent
         - ComponentArn: !Ref BobsUsedBooksIBCustomizedDotNet6SdkComponent
         - ComponentArn: !Ref BobsUsedBooksIBCustomizedComponent
@@ -706,23 +683,25 @@ Resources:
         - DeviceName: /dev/sda1
           Ebs:
             DeleteOnTermination: true
-            VolumeType: "gp3"
+            VolumeType: gp3
             VolumeSize: 100
       Tags:
         CloudFormationStackName: !Ref AWS::StackName
         CloudFormationStackId: !Ref AWS::StackId
   BobsUsedBooksDistributionConfiguration:
-    Type: 'AWS::ImageBuilder::DistributionConfiguration'
+    Type: AWS::ImageBuilder::DistributionConfiguration
     Properties:
       Name: !Sub BobsUsedBooksDistributionConfiguration-${AWS::StackName}
-      Description: !Sub 'Image Builder Distribution for Bobs Book store Windows AutoScaling solution. Generated by the CFN for stack: ${AWS::StackName}. Distribute to ASG: ${BobsUsedBooksWindowsASG}'
+      Description: !Sub 'Image Builder Distribution for Bobs Book store Windows
+        AutoScaling solution. Generated by the CFN for stack: ${AWS::StackName}.
+        Distribute to ASG: ${BobsUsedBooksWindowsASG}'
       Distributions:
         - Region: !Ref AWS::Region
           AmiDistributionConfiguration:
-            Name: 'BobsUsedBooksDistributionConfiguration {{ imagebuilder:buildDate }}'
-            Description: 'Update the AMI for Web/APP'
+            Name: BobsUsedBooksDistributionConfiguration {{ imagebuilder:buildDate }}
+            Description: Update the AMI for Web/APP
             AmiTags:
-              AmiTagKey: 'ami-tag-key'
+              AmiTagKey: ami-tag-key
               Date: '{{ imagebuilder:buildDate }}'
               Application: !Ref AWS::StackName
           FastLaunchConfigurations:
@@ -732,18 +711,19 @@ Resources:
                 LaunchTemplateId: !Ref BobsUsedBooksFastLaunchTemplate
               MaxParallelLaunches: 6
               SnapshotConfiguration:
-                  TargetResourceCount: 6
+                TargetResourceCount: 6
           LaunchTemplateConfigurations:
-          - LaunchTemplateId: !Ref BobsUsedBooksLaunchTemplate
-            SetDefaultVersion: true
+            - LaunchTemplateId: !Ref BobsUsedBooksLaunchTemplate
+              SetDefaultVersion: true
       Tags:
         CloudFormationStackName: !Ref AWS::StackName
         CloudFormationStackId: !Ref AWS::StackId
   BobsUsedBooksImagePipeline:
-    Type: 'AWS::ImageBuilder::ImagePipeline'
+    Type: AWS::ImageBuilder::ImagePipeline
     Properties:
       Name: !Sub BobsUsedBooksImagePipeline-${AWS::StackName}
-      Description: !Sub 'Image Builder Pipeline for Bobs Book store Windows AutoScaling solution. Generated by the CFN for stack: ${AWS::StackName}'
+      Description: !Sub 'Image Builder Pipeline for Bobs Book store Windows
+        AutoScaling solution. Generated by the CFN for stack: ${AWS::StackName}'
       ImageRecipeArn: !Ref BobsUsedBooksImageRecipe
       InfrastructureConfigurationArn: !Ref BobsUsedBooksInfrastructureConfiguration
       DistributionConfigurationArn: !Ref BobsUsedBooksDistributionConfiguration
@@ -752,9 +732,9 @@ Resources:
         ImageTestsEnabled: false
         TimeoutMinutes: 90
       Schedule:
-        ScheduleExpression: 'cron(30 22 ? * tue#2 *)'
-        PipelineExecutionStartCondition: 'EXPRESSION_MATCH_AND_DEPENDENCY_UPDATES_AVAILABLE'
-      Status: 'ENABLED'
+        ScheduleExpression: cron(30 22 ? * tue#2 *)
+        PipelineExecutionStartCondition: EXPRESSION_MATCH_AND_DEPENDENCY_UPDATES_AVAILABLE
+      Status: ENABLED
       Tags:
         CloudFormationStackName: !Ref AWS::StackName
         CloudFormationStackId: !Ref AWS::StackId
@@ -764,8 +744,9 @@ Resources:
       DocumentType: Command
       DocumentFormat: YAML
       Content:
-        schemaVersion: "2.2"
-        description: !Sub 'Domain Join document for Bobs Book store Windows AutoScaling solution. Generated by the CFN for stack: ${AWS::StackName}'
+        schemaVersion: '2.2'
+        description: !Sub 'Domain Join document for Bobs Book store Windows AutoScaling
+          solution. Generated by the CFN for stack: ${AWS::StackName}'
         mainSteps:
           - action: aws:runDocument
             name: DomainJoin
@@ -775,9 +756,7 @@ Resources:
               documentParameters:
                 directoryId: !Ref BobsUsedBooksMAD
                 directoryName: !Ref MicrosoftADDomainName
-                dnsIpAddresses: !GetAtt
-                  - BobsUsedBooksMAD
-                  - DnsIpAddresses
+                dnsIpAddresses: !GetAtt BobsUsedBooksMAD.DnsIpAddresses
   BobsUsedBooksMAD:
     Type: AWS::DirectoryService::MicrosoftAD
     Properties:
@@ -785,23 +764,22 @@ Resources:
       Password: !Sub '{{resolve:secretsmanager:${BobsUsedBooksMadAdminSecret}:SecretString:password}}'
       VpcSettings:
         SubnetIds: !Ref PrivateSubnets
-        VpcId:
-          Ref: VPC
+        VpcId: !Ref VPC
       Edition: Standard
   BobsUsedBooksSqlDb:
-    Type: 'AWS::RDS::DBInstance'
+    Type: AWS::RDS::DBInstance
     DeletionPolicy: Delete
     UpdateReplacePolicy: Delete
     Properties:
       DBInstanceClass: db.t3.small
       AllocatedStorage: '100'
       Engine: sqlserver-ex
-      EngineVersion: "15.00.4236.7.v1"
+      EngineVersion: 15.00.4236.7.v1
       MasterUsername: !Sub '{{resolve:secretsmanager:${BobsUsedBooksSqlDbSecret}:SecretString:username::}}'
       MasterUserPassword: !Sub '{{resolve:secretsmanager:${BobsUsedBooksSqlDbSecret}:SecretString:password::}}'
       EnablePerformanceInsights: false
       BackupRetentionPeriod: 3
-      Port: "1433"
+      Port: '1433'
       PubliclyAccessible: false
       DBSubnetGroupName: !Ref BobsUsedBooksSqlDbSubnetGroup
       StorageEncrypted: false
@@ -809,9 +787,10 @@ Resources:
       VPCSecurityGroups:
         - !Ref DBSecurityGroup
   BobsUsedBooksSqlDbSecret:
-    Type: 'AWS::SecretsManager::Secret'
+    Type: AWS::SecretsManager::Secret
     Properties:
-      Description: !Sub 'Password for RDS MSSQL used for Bobs Book store Windows AutoScaling solution. Generated by the CFN for stack: ${AWS::StackName}'
+      Description: !Sub 'Password for RDS MSSQL used for Bobs Book store Windows
+        AutoScaling solution. Generated by the CFN for stack: ${AWS::StackName}'
       GenerateSecretString:
         ExcludeCharacters: ' %+~`#$&*()|[]{}:;<>?!''/@"\'
         GenerateStringKey: password
@@ -820,13 +799,13 @@ Resources:
     UpdateReplacePolicy: Delete
     DeletionPolicy: Delete
   BobsUsedBooksSqlDbSecretAttachment:
-    Type: 'AWS::SecretsManager::SecretTargetAttachment'
+    Type: AWS::SecretsManager::SecretTargetAttachment
     Properties:
       SecretId: !Ref BobsUsedBooksSqlDbSecret
       TargetId: !Ref BobsUsedBooksSqlDb
-      TargetType: 'AWS::RDS::DBInstance'
+      TargetType: AWS::RDS::DBInstance
   BobsUsedBooksDbSecret:
-    Type: 'AWS::SSM::Parameter'
+    Type: AWS::SSM::Parameter
     Properties:
       Type: String
       Value: !Join
@@ -850,86 +829,86 @@ Resources:
                   - ':'
                   - !Ref BobsUsedBooksSqlDbSecret
   BobsUsedBooksSqlDbSubnetGroup:
-    Type: 'AWS::RDS::DBSubnetGroup'
+    Type: AWS::RDS::DBSubnetGroup
     Properties:
       DBSubnetGroupDescription: Subnet group for BobsUsedBooksSqlDb database
       SubnetIds: !Ref PrivateSubnets
   EventBridgeRuleScaleIn:
     Type: AWS::Events::Rule
     Properties:
-      Description: !Sub 'Amazon EventBridge rule that will trigger AWS Systems Manager Automation document when an instance go in Terminate:wait for Bobs Book store Windows AutoScaling solution. Generated by the CFN for stack: ${AWS::StackName}'
+      Description: !Sub 'Amazon EventBridge rule that will trigger AWS Systems Manager
+        Automation document when an instance go in Terminate:wait for Bobs Book
+        store Windows AutoScaling solution. Generated by the CFN for stack:
+        ${AWS::StackName}'
       EventPattern:
         source:
-        - aws.autoscaling
+          - aws.autoscaling
         detail-type:
-        - EC2 Instance-terminate Lifecycle Action
+          - EC2 Instance-terminate Lifecycle Action
         detail:
           AutoScalingGroupName:
-          - Ref: BobsUsedBooksWindowsASG
+            - !Ref BobsUsedBooksWindowsASG
       Targets:
-      - Arn:
-          Fn::Sub: arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/${AWSSystemsManagerAutomationDocumentScaleIn}:$DEFAULT
-        RoleArn:
-          !GetAtt EventBridgeRuleRole.Arn
-        Id: TargetFunctionV1
-        InputTransformer:
-          InputPathsMap:
-            instanceid: "$.detail.EC2InstanceId"
-          InputTemplate: '{"InstanceId":[<instanceid>]}'
+        - Arn: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/${AWSSystemsManagerAutomationDocumentScaleIn}:$DEFAULT
+          RoleArn: !GetAtt EventBridgeRuleRole.Arn
+          Id: TargetFunctionV1
+          InputTransformer:
+            InputPathsMap:
+              instanceid: $.detail.EC2InstanceId
+            InputTemplate: '{"InstanceId":[<instanceid>]}'
   EventBridgeRuleScaleOut:
     Type: AWS::Events::Rule
     Properties:
-      Description: !Sub 'Amazon EventBridge rule that will trigger AWS Step functions when an instance go in Pending:Wait for Bobs Book store Windows AutoScaling solution. Generated by the CFN for stack: ${AWS::StackName}'
+      Description: !Sub 'Amazon EventBridge rule that will trigger AWS Step functions
+        when an instance go in Pending:Wait for Bobs Book store Windows
+        AutoScaling solution. Generated by the CFN for stack: ${AWS::StackName}'
       EventPattern:
         source:
-        - aws.autoscaling
+          - aws.autoscaling
         detail-type:
-        - EC2 Instance-launch Lifecycle Action
+          - EC2 Instance-launch Lifecycle Action
         detail:
           AutoScalingGroupName:
-          - Ref: BobsUsedBooksWindowsASG
+            - !Ref BobsUsedBooksWindowsASG
       Targets:
-      - Arn:
-          Fn::Sub: arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/${AWSSystemsManagerAutomationDocumentScaleOut}:$DEFAULT
-        RoleArn:
-          !GetAtt EventBridgeRuleRole.Arn
-        Id: TargetFunctionV1
-        InputTransformer:
-          InputPathsMap:
-            instanceid: "$.detail.EC2InstanceId"
-          InputTemplate: '{"InstanceId":[<instanceid>]}'
+        - Arn: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/${AWSSystemsManagerAutomationDocumentScaleOut}:$DEFAULT
+          RoleArn: !GetAtt EventBridgeRuleRole.Arn
+          Id: TargetFunctionV1
+          InputTransformer:
+            InputPathsMap:
+              instanceid: $.detail.EC2InstanceId
+            InputTemplate: '{"InstanceId":[<instanceid>]}'
   EventBridgeRuleRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
-        - Effect: Allow
-          Principal:
-            Service:
-            - events.amazonaws.com
-          Action:
-          - sts:AssumeRole
+          - Effect: Allow
+            Principal:
+              Service:
+                - events.amazonaws.com
+            Action:
+              - sts:AssumeRole
       Policies:
-      - PolicyDocument:
-          Version: '2012-10-17'
-          Statement:
-          - Effect: Allow
-            Action:
-            - ssm:StartAutomationExecution
-            Resource:
-              - Fn::Sub: arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/${AWSSystemsManagerAutomationDocumentScaleOut}:$DEFAULT
-              - Fn::Sub: arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/${AWSSystemsManagerAutomationDocumentScaleIn}:$DEFAULT
-        PolicyName: Start-SSM-Automation-Policy
-      - PolicyDocument:
-          Version: '2012-10-17'
-          Statement:
-          - Effect: Allow
-            Action:
-            - iam:PassRole
-            Resource:
-              !GetAtt AWSSystemsManagerAutomationRole.Arn
-        PolicyName: Pass-Role-SSM-Automation-Policy
+        - PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:StartAutomationExecution
+                Resource:
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/${AWSSystemsManagerAutomationDocumentScaleOut}:$DEFAULT
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/${AWSSystemsManagerAutomationDocumentScaleIn}:$DEFAULT
+          PolicyName: Start-SSM-Automation-Policy
+        - PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource: !GetAtt AWSSystemsManagerAutomationRole.Arn
+          PolicyName: Pass-Role-SSM-Automation-Policy
       Tags:
         - Key: CloudFormationStackId
           Value: !Ref AWS::StackId
@@ -941,43 +920,41 @@ Resources:
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
-        - Effect: Allow
-          Principal:
-            Service:
-            - ssm.amazonaws.com
-          Action:
-          - sts:AssumeRole
+          - Effect: Allow
+            Principal:
+              Service:
+                - ssm.amazonaws.com
+            Action:
+              - sts:AssumeRole
       Policies:
-      - PolicyDocument:
-          Version: '2012-10-17'
-          Statement:
-          - Effect: Allow
-            Action:
-            - ssm:DescribeInstanceInformation
-            - ssm:ListCommands
-            - ssm:ListCommandInvocations
-            Resource: "*"
-          - Effect: Allow
-            Action:
-            - ssm:SendCommand
-            Resource:
-              - Fn::Sub: arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:document/${DomainJoinDocument}
-              - Fn::Sub: arn:${AWS::Partition}:ssm:${AWS::Region}::document/AWS-RunPowerShellScript
-          - Action:
-            - ssm:SendCommand
-            Resource:
-              Fn::Sub: arn:${AWS::Partition}:ec2:*:*:instance/*
-            Effect: Allow
-        PolicyName: SSM-Automation-Policy
-      - PolicyDocument:
-          Version: '2012-10-17'
-          Statement:
-          - Effect: Allow
-            Action:
-            - autoscaling:CompleteLifecycleAction
-            Resource:
-              Fn::Sub: arn:${AWS::Partition}:autoscaling:${AWS::Region}:${AWS::AccountId}:autoScalingGroup:*:autoScalingGroupName/${BobsUsedBooksWindowsASG}
-        PolicyName: SSM-Automation-Permission-to-CompleteLifecycle-Policy
+        - PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:DescribeInstanceInformation
+                  - ssm:ListCommands
+                  - ssm:ListCommandInvocations
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ssm:SendCommand
+                Resource:
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:document/${DomainJoinDocument}
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}::document/AWS-RunPowerShellScript
+              - Action:
+                  - ssm:SendCommand
+                Resource: !Sub arn:${AWS::Partition}:ec2:*:*:instance/*
+                Effect: Allow
+          PolicyName: SSM-Automation-Policy
+        - PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - autoscaling:CompleteLifecycleAction
+                Resource: !Sub arn:${AWS::Partition}:autoscaling:${AWS::Region}:${AWS::AccountId}:autoScalingGroup:*:autoScalingGroupName/${BobsUsedBooksWindowsASG}
+          PolicyName: SSM-Automation-Permission-to-CompleteLifecycle-Policy
       Tags:
         - Key: CloudFormationStackId
           Value: !Ref AWS::StackId
@@ -989,16 +966,16 @@ Resources:
       DocumentType: Automation
       Content:
         schemaVersion: '0.3'
-        assumeRole: "{{AutomationAssumeRole}}"
-        description: !Sub 'Automation document to disjoin instances from the Active Directory, send a signal to complete the LifeCycleHook to terminate the
-          instance. Generated by the CFN for stack: ${AWS::StackName}'
+        assumeRole: '{{AutomationAssumeRole}}'
+        description: !Sub 'Automation document to disjoin instances from the Active
+          Directory, send a signal to complete the LifeCycleHook to terminate
+          the instance. Generated by the CFN for stack: ${AWS::StackName}'
         parameters:
           InstanceId:
             type: String
           ASGName:
             type: String
-            default:
-              Ref: BobsUsedBooksWindowsASG
+            default: !Ref BobsUsedBooksWindowsASG
             description: The name of the AutoScaling Group.
           LCHName:
             type: String
@@ -1029,76 +1006,76 @@ Resources:
             description: The secret manager parameter for MAD credentials
           AutomationAssumeRole:
             type: String
-            default:
-              !GetAtt AWSSystemsManagerAutomationRole.Arn
-            description: "(Required) The ARN of the role that allows Automation to
-              perform the actions on your behalf."
+            default: !GetAtt AWSSystemsManagerAutomationRole.Arn
+            description: (Required) The ARN of the role that allows Automation to perform
+              the actions on your behalf.
         mainSteps:
-        - name: verifyInstancesOnlineSSM
-          action: aws:waitForAwsResourceProperty
-          timeoutSeconds: 600
-          nextStep: RunCommand
-          onFailure: Continue
-          inputs:
-            Service: ssm
-            Api: DescribeInstanceInformation
-            InstanceInformationFilterList:
-              - key: InstanceIds
-                valueSet:
-                  - '{{ InstanceId }}'
-            PropertySelector: '$.InstanceInformationList[0].PingStatus'
-            DesiredValues:
-              - Online
-        - name: RunCommand
-          action: aws:runCommand
-          nextStep: ContinueLifecycleAction
-          onFailure: step:ContinueLifecycleAction
-          inputs:
-            DocumentName: AWS-RunPowerShellScript
-            InstanceIds:
-            - "{{ InstanceId }}"
-            Parameters:
-              executionTimeout: '600'
-              commands: |-
-                $name = $env:computerName
-                $PartOfDomain = (Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain
-                if($PartOfDomain -eq $true){
-                  $DomainCredentialSecretValue = (Get-SSMParameterValue -Name /aws/reference/secretsmanager/{{ DomainCredentialSecret }} -WithDecryption $True).Parameters[0].Value | ConvertFrom-Json
-                  $username = $DomainCredentialSecretValue.username
-                  $password = $DomainCredentialSecretValue.password | ConvertTo-SecureString -asPlainText -Force
-                  $credential = New-Object System.Management.automation.PSCredential($username,$password)
-                  Write-Output "Removing computer $name from the domain"
-                  Remove-Computer -ComputerName $name -Credential $credential -PassThru -Force
-                  Write-Output "The computer $name removed from the domain. Rebooting..."
-                  exit 3010
-                }
-                else{
-                Write-Output "The computer $name is not in part of a domain"}
-        - name: ContinueLifecycleAction
-          action: aws:executeAwsApi
-          isEnd: true
-          inputs:
-            Service: autoscaling
-            Api: CompleteLifecycleAction
-            AutoScalingGroupName: "{{ ASGName }}"
-            InstanceId: "{{ InstanceId }}"
-            LifecycleActionResult: CONTINUE
-            LifecycleHookName: "{{ LCHName }}"
+          - name: verifyInstancesOnlineSSM
+            action: aws:waitForAwsResourceProperty
+            timeoutSeconds: 600
+            nextStep: RunCommand
+            onFailure: Continue
+            inputs:
+              Service: ssm
+              Api: DescribeInstanceInformation
+              InstanceInformationFilterList:
+                - key: InstanceIds
+                  valueSet:
+                    - '{{ InstanceId }}'
+              PropertySelector: $.InstanceInformationList[0].PingStatus
+              DesiredValues:
+                - Online
+          - name: RunCommand
+            action: aws:runCommand
+            nextStep: ContinueLifecycleAction
+            onFailure: step:ContinueLifecycleAction
+            inputs:
+              DocumentName: AWS-RunPowerShellScript
+              InstanceIds:
+                - '{{ InstanceId }}'
+              Parameters:
+                executionTimeout: '600'
+                commands: |-
+                  $name = $env:computerName
+                  $PartOfDomain = (Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain
+                  if($PartOfDomain -eq $true){
+                    $DomainCredentialSecretValue = (Get-SSMParameterValue -Name /aws/reference/secretsmanager/{{ DomainCredentialSecret }} -WithDecryption $True).Parameters[0].Value | ConvertFrom-Json
+                    $username = $DomainCredentialSecretValue.username
+                    $password = $DomainCredentialSecretValue.password | ConvertTo-SecureString -asPlainText -Force
+                    $credential = New-Object System.Management.automation.PSCredential($username,$password)
+                    Write-Output "Removing computer $name from the domain"
+                    Remove-Computer -ComputerName $name -Credential $credential -PassThru -Force
+                    Write-Output "The computer $name removed from the domain. Rebooting..."
+                    exit 3010
+                  }
+                  else{
+                  Write-Output "The computer $name is not in part of a domain"}
+          - name: ContinueLifecycleAction
+            action: aws:executeAwsApi
+            isEnd: true
+            inputs:
+              Service: autoscaling
+              Api: CompleteLifecycleAction
+              AutoScalingGroupName: '{{ ASGName }}'
+              InstanceId: '{{ InstanceId }}'
+              LifecycleActionResult: CONTINUE
+              LifecycleHookName: '{{ LCHName }}'
   AWSSystemsManagerAutomationDocumentScaleOut:
     Type: AWS::SSM::Document
     Properties:
       DocumentType: Automation
       Content:
         schemaVersion: '0.3'
-        assumeRole: "{{AutomationAssumeRole}}"
-        description: !Sub 'Automation document to join instances to the Active Directory, send a signal to the LifeCycleHook to put the instance InService. Generated by the CFN for stack: ${AWS::StackName}'
+        assumeRole: '{{AutomationAssumeRole}}'
+        description: !Sub 'Automation document to join instances to the Active
+          Directory, send a signal to the LifeCycleHook to put the instance
+          InService. Generated by the CFN for stack: ${AWS::StackName}'
         parameters:
           InstanceId:
             type: String
           ASGName:
             type: String
-            default:
-              Ref: BobsUsedBooksWindowsASG
+            default: !Ref BobsUsedBooksWindowsASG
             description: The name of the AutoScaling Group.
           LCHName:
             type: String
@@ -1106,153 +1083,151 @@ Resources:
             description: The name of the Life Cycle Hook.
           AutomationAssumeRole:
             type: String
-            default:
-              !GetAtt AWSSystemsManagerAutomationRole.Arn
-            description: "(Required) The ARN of the role that allows Automation to
-              perform the actions on your behalf."
+            default: !GetAtt AWSSystemsManagerAutomationRole.Arn
+            description: (Required) The ARN of the role that allows Automation to perform
+              the actions on your behalf.
         mainSteps:
-        - name: verifyInstancesOnlineSSM
-          action: aws:waitForAwsResourceProperty
-          timeoutSeconds: 600
-          nextStep: RunCommand
-          onFailure: Continue
-          inputs:
-            Service: ssm
-            Api: DescribeInstanceInformation
-            InstanceInformationFilterList:
-              - key: InstanceIds
-                valueSet:
-                  - '{{ InstanceId }}'
-            PropertySelector: '$.InstanceInformationList[0].PingStatus'
-            DesiredValues:
-              - Online
-        - name: RunCommand
-          action: aws:runCommand
-          nextStep: ContinueLifecycleAction
-          onFailure: step:AbandonLifecycleAction
-          inputs:
-            DocumentName: !Ref DomainJoinDocument
-            InstanceIds:
-            - "{{ InstanceId }}"
-        - name: ContinueLifecycleAction
-          action: aws:executeAwsApi
-          isEnd: true
-          inputs:
-            Service: autoscaling
-            Api: CompleteLifecycleAction
-            AutoScalingGroupName: "{{ ASGName }}"
-            InstanceId: "{{ InstanceId }}"
-            LifecycleActionResult: CONTINUE
-            LifecycleHookName: "{{ LCHName }}"
-        - name: AbandonLifecycleAction
-          action: aws:executeAwsApi
-          isEnd: true
-          inputs:
-            Service: autoscaling
-            Api: CompleteLifecycleAction
-            AutoScalingGroupName: "{{ ASGName }}"
-            InstanceId: "{{ InstanceId }}"
-            LifecycleActionResult:  ABANDON
-            LifecycleHookName: "{{ LCHName }}"
+          - name: verifyInstancesOnlineSSM
+            action: aws:waitForAwsResourceProperty
+            timeoutSeconds: 600
+            nextStep: RunCommand
+            onFailure: Continue
+            inputs:
+              Service: ssm
+              Api: DescribeInstanceInformation
+              InstanceInformationFilterList:
+                - key: InstanceIds
+                  valueSet:
+                    - '{{ InstanceId }}'
+              PropertySelector: $.InstanceInformationList[0].PingStatus
+              DesiredValues:
+                - Online
+          - name: RunCommand
+            action: aws:runCommand
+            nextStep: ContinueLifecycleAction
+            onFailure: step:AbandonLifecycleAction
+            inputs:
+              DocumentName: !Ref DomainJoinDocument
+              InstanceIds:
+                - '{{ InstanceId }}'
+          - name: ContinueLifecycleAction
+            action: aws:executeAwsApi
+            isEnd: true
+            inputs:
+              Service: autoscaling
+              Api: CompleteLifecycleAction
+              AutoScalingGroupName: '{{ ASGName }}'
+              InstanceId: '{{ InstanceId }}'
+              LifecycleActionResult: CONTINUE
+              LifecycleHookName: '{{ LCHName }}'
+          - name: AbandonLifecycleAction
+            action: aws:executeAwsApi
+            isEnd: true
+            inputs:
+              Service: autoscaling
+              Api: CompleteLifecycleAction
+              AutoScalingGroupName: '{{ ASGName }}'
+              InstanceId: '{{ InstanceId }}'
+              LifecycleActionResult: ABANDON
+              LifecycleHookName: '{{ LCHName }}'
   HTTPListener:
-      Type: "AWS::ElasticLoadBalancingV2::Listener"
-      Properties:
-          LoadBalancerArn: !Ref LoadBalancer
-          Port: 80
-          Protocol: "HTTP"
-          DefaultActions:
-            -
-              Order: 1
-              TargetGroupArn: !Ref TargetGroup
-              Type: "forward"
-  TargetGroup:
-      Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
-      Properties:
-        TargetGroupAttributes:
-          - Key: deregistration_delay.timeout_seconds
-            Value: '3'
-        Port: 80
-        Protocol: "HTTP"
-        TargetType: "instance"
-        VpcId: !Ref VPC
-        Tags:
-            - Key: CloudFormationStackId
-              Value: !Ref AWS::StackId
-            - Key: CloudFormationStackName
-              Value: !Ref AWS::StackName
-  LoadBalancer:
-      Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
-      Properties:
-        Subnets: !Ref PublicSubnets
-        SecurityGroups:
-          - !Ref ALBSecurityGroup
-  ALBSecurityGroup:
-    Type: "AWS::EC2::SecurityGroup"
+    Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
-      GroupDescription: !Sub 'Security group for ALB to allow traffic from everyone on port 80. Generated by the CFN for stack: ${AWS::StackName}'
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Order: 1
+          TargetGroupArn: !Ref TargetGroup
+          Type: forward
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '3'
+      Port: 80
+      Protocol: HTTP
+      TargetType: instance
+      VpcId: !Ref VPC
+      Tags:
+        - Key: CloudFormationStackId
+          Value: !Ref AWS::StackId
+        - Key: CloudFormationStackName
+          Value: !Ref AWS::StackName
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Subnets: !Ref PublicSubnets
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub 'Security group for ALB to allow traffic from everyone on
+        port 80. Generated by the CFN for stack: ${AWS::StackName}'
       VpcId: !Ref VPC
       SecurityGroupIngress:
-        -
-          CidrIp: "0.0.0.0/0"
+        - CidrIp: 0.0.0.0/0
           FromPort: 80
-          IpProtocol: "tcp"
+          IpProtocol: tcp
           ToPort: 80
       SecurityGroupEgress:
-      -
-          IpProtocol: -1
+        - IpProtocol: -1
           CidrIp: 0.0.0.0/0
       Tags:
-          - Key: CloudFormationStackId
-            Value: !Ref AWS::StackId
-          - Key: CloudFormationStackName
-            Value: !Ref AWS::StackName
+        - Key: CloudFormationStackId
+          Value: !Ref AWS::StackId
+        - Key: CloudFormationStackName
+          Value: !Ref AWS::StackName
   ASGSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       VpcId: !Ref VPC
-      GroupDescription: !Sub 'Security group for ASG to allow traffic from ALB only. Generated by the CFN for stack: ${AWS::StackName}'
+      GroupDescription: !Sub 'Security group for ASG to allow traffic from ALB only.
+        Generated by the CFN for stack: ${AWS::StackName}'
       SecurityGroupIngress:
         - IpProtocol: tcp
           SourceSecurityGroupId: !Ref ALBSecurityGroup
           FromPort: 80
           ToPort: 80
       SecurityGroupEgress:
-      -
-          IpProtocol: -1
+        - IpProtocol: -1
           CidrIp: 0.0.0.0/0
       Tags:
-          - Key: CloudFormationStackId
-            Value: !Ref AWS::StackId
-          - Key: CloudFormationStackName
-            Value: !Ref AWS::StackName
+        - Key: CloudFormationStackId
+          Value: !Ref AWS::StackId
+        - Key: CloudFormationStackName
+          Value: !Ref AWS::StackName
   DBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       VpcId: !Ref VPC
-      GroupDescription: !Sub 'Security group for DB to allow traffic from ASG only. Generated by the CFN for stack: ${AWS::StackName}'
+      GroupDescription: !Sub 'Security group for DB to allow traffic from ASG only.
+        Generated by the CFN for stack: ${AWS::StackName}'
       SecurityGroupIngress:
         - IpProtocol: tcp
           SourceSecurityGroupId: !Ref ASGSecurityGroup
           FromPort: 1433
           ToPort: 1433
       SecurityGroupEgress:
-      -
-          IpProtocol: -1
+        - IpProtocol: -1
           CidrIp: 0.0.0.0/0
       Tags:
-          - Key: CloudFormationStackId
-            Value: !Ref AWS::StackId
-          - Key: CloudFormationStackName
-            Value: !Ref AWS::StackName
+        - Key: CloudFormationStackId
+          Value: !Ref AWS::StackId
+        - Key: CloudFormationStackName
+          Value: !Ref AWS::StackName
   BobsUsedBooksMadAdminSecret:
     Type: AWS::SecretsManager::Secret
     DeletionPolicy: Delete
     UpdateReplacePolicy: Delete
     Properties:
-      Description: !Sub 'Password for AWS Managed Microsoft AD. Generated by the CFN for stack: ${AWS::StackName}'
+      Description: !Sub 'Password for AWS Managed Microsoft AD. Generated by the CFN
+        for stack: ${AWS::StackName}'
       GenerateSecretString:
         SecretStringTemplate: '{"username": "Admin"}'
-        GenerateStringKey: 'password'
+        GenerateStringKey: password
         PasswordLength: 30
         ExcludeCharacters: '"@/\'
   AWSLambdaRole:
@@ -1261,59 +1236,52 @@ Resources:
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
-        - Effect: Allow
-          Principal:
-            Service:
-            - lambda.amazonaws.com
-          Action: sts:AssumeRole
-      Path: "/"
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
       Policies:
-      - PolicyName: AWSLambdaPolicy
-        PolicyDocument:
-          Version: '2012-10-17'
-          Statement:
-          - Action: autoscaling:UpdateAutoScalingGroup
-            Resource:
-              Fn::Sub: arn:${AWS::Partition}:autoscaling:${AWS::Region}:${AWS::AccountId}:autoScalingGroup:*:autoScalingGroupName/${BobsUsedBooksWindowsASG}
-            Effect: Allow
-          - Action: imagebuilder:StartImagePipelineExecution
-            Resource:
-              !Ref BobsUsedBooksImagePipeline
-            Effect: Allow
-          - Action: iam:CreateServiceLinkedRole
-            Resource:
-              Fn::Sub: arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-service-role/imagebuilder.amazonaws.com/AWSServiceRoleForImageBuilder
-            Condition:
-              StringEquals:
-                "iam:AWSServiceName": "imagebuilder.amazonaws.com"
-            Effect: Allow
-          - Action: logs:CreateLogGroup
-            Resource:
-              Fn::Sub: arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*
-            Effect: Allow
-          - Action:
-            - logs:CreateLogStream
-            - logs:PutLogEvents
-            - logs:CreateLogGroup
-            Resource:
-              Fn::Sub: arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*:*
-            Effect: Allow
-          - Action: iam:PassRole
-            Effect: Allow
-            Resource:
-              !GetAtt SSMInstanceProfileRole.Arn
-          - Action:
-            - ec2:RunInstances
-            - ec2:CreateTags
-            Effect: Allow
-            Resource: '*'
-            Condition:
-              ArnEquals:
-                "ec2:LaunchTemplate":
-                  Fn::Sub: arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:launch-template/${BobsUsedBooksLaunchTemplate}
-          - Action: ssm:GetParameters
-            Effect: Allow
-            Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}::parameter/aws/service/ami-windows-latest/Windows_Server-2022-English-Full-Base
+        - PolicyName: AWSLambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Action: autoscaling:UpdateAutoScalingGroup
+                Resource: !Sub arn:${AWS::Partition}:autoscaling:${AWS::Region}:${AWS::AccountId}:autoScalingGroup:*:autoScalingGroupName/${BobsUsedBooksWindowsASG}
+                Effect: Allow
+              - Action: imagebuilder:StartImagePipelineExecution
+                Resource: !Ref BobsUsedBooksImagePipeline
+                Effect: Allow
+              - Action: iam:CreateServiceLinkedRole
+                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-service-role/imagebuilder.amazonaws.com/AWSServiceRoleForImageBuilder
+                Condition:
+                  StringEquals:
+                    iam:AWSServiceName: imagebuilder.amazonaws.com
+                Effect: Allow
+              - Action: logs:CreateLogGroup
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*
+                Effect: Allow
+              - Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:CreateLogGroup
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*:*
+                Effect: Allow
+              - Action: iam:PassRole
+                Effect: Allow
+                Resource: !GetAtt SSMInstanceProfileRole.Arn
+              - Action:
+                  - ec2:RunInstances
+                  - ec2:CreateTags
+                Effect: Allow
+                Resource: '*'
+                Condition:
+                  ArnEquals:
+                    ec2:LaunchTemplate: !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:launch-template/${BobsUsedBooksLaunchTemplate}
+              - Action: ssm:GetParameters
+                Effect: Allow
+                Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}::parameter/aws/service/ami-windows-latest/Windows_Server-2022-English-Full-Base
       Tags:
         - Key: cloudformation:logical-id
           Value: AWSLambdaRole
@@ -1324,18 +1292,18 @@ Resources:
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      Description: !Sub "Lambda function does 1. Update the autoscaling group to always use the default launch template 2. run image builder pipeline at the end of the cloudformation. CloudFormation stack name: ${AWS::StackName}"
+      Description: !Sub 'Lambda function does 1. Update the autoscaling group to
+        always use the default launch template 2. run image builder pipeline at
+        the end of the cloudformation. CloudFormation stack name:
+        ${AWS::StackName}'
       Code:
         ZipFile: |
           import boto3
           import os
           import cfnresponse
-
           default_region = os.environ['RegionId']
-
           def update_autoscaling(auto_scaling_name,launch_template_id):
               asg_client = get_asg_client(default_region)
-
               # Update the scaling policy.
               return asg_client.update_auto_scaling_group(
                   AutoScalingGroupName=auto_scaling_name,
@@ -1344,21 +1312,16 @@ Resources:
                   'Version': '$Default'
               }
               )
-
           def invoke_image_builder(imagebuilder_pipeline_arn):
-
               im_client = get_im_client(default_region)
               # Invoke the image builder pipeline.
               return im_client.start_image_pipeline_execution(
                   imagePipelineArn=imagebuilder_pipeline_arn
               )
-
           def get_asg_client(Region):
               return boto3.client('autoscaling', Region)
-
           def get_im_client(Region):
               return boto3.client('imagebuilder', Region)
-
           def handler(event, context):
             if event['RequestType'] == 'Delete':
                 cfnresponse.send(event, context, "SUCCESS", {"Message": "Resource deletion successful!"})
@@ -1371,25 +1334,23 @@ Resources:
                 imagebuilder_pipeline=os.environ['pipeline_arn']
                 # Update the autoscaling policy.
                 responseData = update_autoscaling(auto_scaling_name, launch_template)
-
                 # Invoke the image builder pipeline.
                 responseData = responseData | invoke_image_builder(imagebuilder_pipeline)
-
                 cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
 
       Environment:
         Variables:
-            launch_templateId: !Ref BobsUsedBooksLaunchTemplate
-            RegionId: !Ref "AWS::Region"
-            pipeline_arn: !Ref BobsUsedBooksImagePipeline
-            asg_name: !Ref BobsUsedBooksWindowsASG
+          launch_templateId: !Ref BobsUsedBooksLaunchTemplate
+          RegionId: !Ref AWS::Region
+          pipeline_arn: !Ref BobsUsedBooksImagePipeline
+          asg_name: !Ref BobsUsedBooksWindowsASG
       Handler: index.handler
       Role: !GetAtt AWSLambdaRole.Arn
       Runtime: python3.9
       Timeout: 60
   InvokeLambda:
     Type: AWS::CloudFormation::CustomResource
-    Version: "1.0"
+    Version: '1.0'
     Properties:
       ServiceToken: !GetAtt LambdaFunction.Arn
 Outputs:
