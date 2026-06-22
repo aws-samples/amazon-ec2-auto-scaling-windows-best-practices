@@ -898,8 +898,9 @@ Resources:
                 Action:
                   - ssm:StartAutomationExecution
                 Resource:
-                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/${AWSSystemsManagerAutomationDocumentScaleOut}:$DEFAULT
-                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:automation-definition/${AWSSystemsManagerAutomationDocumentScaleIn}:$DEFAULT
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:document/${AWSSystemsManagerAutomationDocumentScaleOut}
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:document/${AWSSystemsManagerAutomationDocumentScaleIn}
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:automation-execution/*
           PolicyName: Start-SSM-Automation-Policy
         - PolicyDocument:
             Version: '2012-10-17'
