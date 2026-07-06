@@ -1347,7 +1347,7 @@ Resources:
           asg_name: !Ref BobsUsedBooksWindowsASG
       Handler: index.handler
       Role: !GetAtt AWSLambdaRole.Arn
-      Runtime: python3.9
+      Runtime: python3.14
       Timeout: 60
   InvokeLambda:
     Type: AWS::CloudFormation::CustomResource
